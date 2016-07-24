@@ -21,19 +21,6 @@ from sklearn import preprocessing
 from sklearn import cross_validation
 from sklearn import linear_model
 
-# %matplotlib inline
-import matplotlib
-import matplotlib.pyplot as plt
-from matplotlib.pyplot import cm
-import matplotlib.cm as cm
-
-import seaborn
-import seaborn as sns
-
-# setup plot style
-sns.reset_defaults()
-sns.set(color_codes=True)
-
 
 # --- Basic setup
 
@@ -43,25 +30,33 @@ EXP_NAME = __file__.rstrip(".py")
 VALIDATION_SIZE = 0.2
 CORES = multiprocessing.cpu_count()
 
-logfolder = "logs"
-if not os.path.exists(logsfolder):
-    os.makedirs(logsfolder)
+outfolder = "output"
+if not os.path.exists(outfolder):
+    os.makedirs(outfolder)
 
-plotfolder = "plots"
-if not os.path.exists(plotsfolder):
-    os.makedirs(plotsfolder)
+base_out_folder = outfolder + "/" + EXP_NAME
+if not os.path.exists(base_out_folder):
+    os.makedirs(base_out_folder)
+
+logfolder = base_out_folder + "/" + "logs"
+if not os.path.exists(logfolder):
+    os.makedirs(logfolder)
+
+resultfolder = base_out_folder + "/" + "results"
+if not os.path.exists(resultfolder):
+    os.makedirs(resultfolder)
 
 # --- Logger setup
 
 # create logger
-logger = logging.getLogger('EXP_NAME')
+logger = logging.getLogger(EXP_NAME)
 logger.setLevel(logging.INFO)
 
 # create console handler and set level to debug
 ch = logging.StreamHandler()
 ch.setLevel(logging.DEBUG)
 # create file handler which logs even debug messages
-fh = logging.FileHandler(logfolder + '/' + EXP_NAME + '-' + TIMESTAMP + '.log')
+fh = logging.FileHandler(logfolder + '/logger.log')
 fh.setLevel(logging.INFO)
 
 # create formatter
@@ -270,9 +265,9 @@ def train_eval_doc2vec_CV(
         mask = np.ones(len(X), dtype=bool)
         mask[fold*foldsize:(fold+1)*foldsize] = False
         fold_X_train = X[mask]
-        fold_X_test = X[mask not False]
+        fold_X_test = X[np.logical_not(mask)]
         fold_y_train = Y[mask]
-        fold_y_test = Y[mask not False]
+        fold_y_test = Y[np.logical_not(mask)]
         # generate train and test corpera
         corpus_train = list(read_corpus(fold_X_train))
         corpus_test = list(read_corpus(fold_X_test, tokens_only=True))
@@ -337,16 +332,15 @@ def grid_search(X, Y, param_lists, file_suffix=""):
             [10] # iter=10
         ]
     """
+    if file_suffix != "":
+        file_suffix = file_suffix + "_"
+
     models = list(itertools.product(*param_lists))
     logger.info('Running grid search with ' + str(len(models)) + ' models' +
                 ' using ' + str(CORES) + ' CPU core(s)')
 
     model_scores = []
     results = []
-
-    resultsfolder = "results/" + EXP_NAME + "_" + TIMESTAMP
-    if not os.path.exists(resultsfolder):
-        os.makedirs(resultsfolder)
 
     for m, model in enumerate(models):
         msg = "### Grid search. Model " + str(m+1) + " / " + str(len(models))
@@ -408,15 +402,16 @@ def grid_search(X, Y, param_lists, file_suffix=""):
                               'mcc train', 'mcc test',
                               'mcc infer train', 'mcc infer test']
 
-        # store results as dataframe
-        filename_results_df = (resultsfolder + "/" +
+        # store results as dataframe and csv
+        filename_results_df = (resultfolder + "/" +
                                file_suffix + "results_df.pickle")
         pickle.dump(results_df, open(filename_results_df, "wb"))
+        results_df.to_csv(resultfolder + "/" + file_suffix + "results_df.csv")
         # store param_lists and model_scores
-        filename_param_lists = (resultsfolder + "/" +
+        filename_param_lists = (resultfolder + "/" +
                                 file_suffix + "param_lists.pickle")
         pickle.dump(param_lists, open(filename_param_lists, "wb"))
-        filename_model_scores = (resultsfolder + "/" +
+        filename_model_scores = (resultfolder + "/" +
                                  file_suffix + "model_scores.pickle")
         pickle.dump(model_scores, open(filename_model_scores, "wb"))
 
@@ -428,7 +423,7 @@ def grid_search(X, Y, param_lists, file_suffix=""):
     return results_df, model_scores
 
 
-# --- Dataset Initialization
+# --- Initialization Dataset and Classifier
 
 # read file
 df_conf = pickle.load(open("data/sentences-dataframe-" +
@@ -465,33 +460,57 @@ Y_cat_val = data_Y_cat[int(1-VALIDATION_SIZE * total_size):]
 estimator_logreg = sklearn.multiclass.OneVsRestClassifier(
     sklearn.linear_model.LogisticRegression())
 
+# check where computation was left of in case of interuption
+try:
+    computation_progress = pickle.load(
+        open(base_out_folder + "/computation_progress.pickle", "rb"))
+except:
+    # no computation was done yet so create a progress file_suffix
+    computation_progress = {'experiment': 0,
+                            'model': 0,
+                            'fold': 0}
+    pickle.dump(computation_progress,
+                open(base_out_folder + "/computation_progress.pickle", "wb"))
+
 # --- Test parameters
 
 # -- Demo
 
-param_list = [
-        [5],  # folds=5
-        [estimator_logreg],  # estimator=sklearn.[...]
-        [50],  # steps=100
-        [0.025],  # alpha_start=0.025
-        [0.0001],  # alpha_end=0.0001
-        [5],  # infer_steps=5
-        [0.0001],  # infer_min_alpha=0.0001
-        [0.1],  # infer_alpha=0.1
-        [True],  # evaluate=True
-        [1],  # dm=0
-        [300],  # size=300
-        [10],  # window=10
-        [3],  # negative=3
-        [2],  # min_count=2
-        [1],  # hs=0
-        [CORES],  # workers=CORES
-        [0],  # sample=1e-5
-        [10]  # iter=10
-    ]
+if (computation_progress['experiment'] == 0):
 
-results_df, model_scores = grid_search(X_train, Y_1hot_train, param_list,
-                                       file_suffix="nuttin")
+    logger.info("#### Running demo experiment")
+
+    param_list = [
+            [5],  # folds=5
+            [estimator_logreg],  # estimator=sklearn.[...]
+            [5],  # steps=100
+            [0.025],  # alpha_start=0.025
+            [0.0001],  # alpha_end=0.0001
+            [5],  # infer_steps=5
+            [0.0001],  # infer_min_alpha=0.0001
+            [0.1],  # infer_alpha=0.1
+            [True],  # evaluate=True
+            [1],  # dm=0
+            [100],  # size=300
+            [10],  # window=10
+            [3],  # negative=3
+            [2],  # min_count=2
+            [1],  # hs=0
+            [CORES],  # workers=CORES
+            [0],  # sample=1e-5
+            [10]  # iter=10
+        ]
+
+    results_df, model_scores = grid_search(X_train, Y_1hot_train, param_list,
+                                           file_suffix="nuttin")
+
+    # update status
+    computation_progress['experiment'] = 1
+    pickle.dump(computation_progress,
+                open(base_out_folder + "/computation_progress.pickle", "wb"))
+
+if (computation_progress['experiment'] == 1):
+    logger.info("#### Running demo experiment 2")
 
 
 
