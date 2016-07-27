@@ -30,7 +30,7 @@ EXP_NAME = __file__.rstrip(".py")
 VALIDATION_SIZE = 0.2
 CORES = multiprocessing.cpu_count()
 
-outfolder = "output"
+outfolder = "../output"
 if not os.path.exists(outfolder):
     os.makedirs(outfolder)
 
@@ -259,6 +259,11 @@ def train_eval_doc2vec_CV(
     fold_test_inf_scores = []
 
     for fold in range(folds):
+
+        # if this model was already computed then skip it
+        if (computation_progress['fold'] > fold):
+            continue
+
         msg = "## Fold " + str(fold+1) + " / " + str(folds)
         logger.info(msg)
         # select data for fold
@@ -299,6 +304,12 @@ def train_eval_doc2vec_CV(
         msg = ("Time elapsed: " + "{:0>2}:{:0>2}:{:05.2f}".format(
                 int(hours), int(minutes), seconds))
         logger.info(msg)
+
+        # update status
+        computation_progress['fold'] = fold
+        pickle.dump(computation_progress,
+                    open(base_out_folder +
+                         "/computation_progress.pickle", "wb"))
 
     mean_train_scores = np.mean(np.vstack(fold_train_scores), axis=0)
     mean_test_scores = np.mean(np.vstack(fold_test_scores), axis=0)
@@ -343,6 +354,11 @@ def grid_search(X, Y, param_lists, file_prefix=""):
     results = []
 
     for m, model in enumerate(models):
+
+        # if this model was already computed then skip it
+        if (computation_progress['model'] > m):
+            continue
+
         msg = "### Grid search. Model " + str(m+1) + " / " + str(len(models))
         logger.info(msg)
         logger.info("--- folds: " + str(model[0]))
@@ -414,6 +430,12 @@ def grid_search(X, Y, param_lists, file_prefix=""):
         filename_model_scores = (resultfolder + "/" +
                                  file_prefix + "model_scores.pickle")
         pickle.dump(model_scores, open(filename_model_scores, "wb"))
+
+        # update status
+        computation_progress['model'] = m
+        pickle.dump(computation_progress,
+                    open(base_out_folder +
+                         "/computation_progress.pickle", "wb"))
 
     logger.info("Grid Search finished")
     logger.info("Stored results DataFrame in " + filename_results_df)
@@ -521,7 +543,7 @@ if (computation_progress['experiment'] == 1):
             [50], # steps=100
             [0.025], # alpha_start=0.025
             [0.0001], # alpha_end=0.0001
-            [5, 100], # infer_steps=5
+            [10], # infer_steps=5
             [0.0001], # infer_min_alpha=0.0001
             [0.1], # infer_alpha=0.1
             [True], # evaluate=True
@@ -556,7 +578,7 @@ if (computation_progress['experiment'] == 2):
             [100], # steps=100
             [0.025], # alpha_start=0.025
             [0.0001], # alpha_end=0.0001
-            [5, 100], # infer_steps=5
+            [10], # infer_steps=5
             [0.0001], # infer_min_alpha=0.0001
             [0.1], # infer_alpha=0.1
             [True], # evaluate=True
@@ -591,7 +613,7 @@ if (computation_progress['experiment'] == 3):
             [50], # steps=100
             [0.025], # alpha_start=0.025
             [0.0001], # alpha_end=0.0001
-            [5, 100], # infer_steps=5
+            [10], # infer_steps=5
             [0.0001], # infer_min_alpha=0.0001
             [0.1], # infer_alpha=0.1
             [True], # evaluate=True
@@ -626,7 +648,7 @@ if (computation_progress['experiment'] == 4):
             [50], # steps=100
             [0.025], # alpha_start=0.025
             [0.0001], # alpha_end=0.0001
-            [5, 100], # infer_steps=5
+            [10], # infer_steps=5
             [0.0001], # infer_min_alpha=0.0001
             [0.1], # infer_alpha=0.1
             [True], # evaluate=True
@@ -661,7 +683,7 @@ if (computation_progress['experiment'] == 5):
             [50], # steps=100
             [0.025], # alpha_start=0.025
             [0.0001], # alpha_end=0.0001
-            [5, 100], # infer_steps=5
+            [10], # infer_steps=5
             [0.0001], # infer_min_alpha=0.0001
             [0.1], # infer_alpha=0.1
             [True], # evaluate=True
@@ -696,7 +718,7 @@ if (computation_progress['experiment'] == 6):
             [50], # steps=100
             [0.025], # alpha_start=0.025
             [0.0001], # alpha_end=0.0001
-            [5, 100], # infer_steps=5
+            [10], # infer_steps=5
             [0.0001], # infer_min_alpha=0.0001
             [0.1], # infer_alpha=0.1
             [True], # evaluate=True

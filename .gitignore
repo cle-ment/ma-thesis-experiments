@@ -1,5 +1,6 @@
 .ipynb_checkpoints
 aws-results
 clemens-super-aws-key-yea.pem
-data
+workfolder/data
 output
+aws-output
