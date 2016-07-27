@@ -311,6 +311,12 @@ def train_eval_doc2vec_CV(
                     open(base_out_folder +
                          "/computation_progress.pickle", "wb"))
 
+    # reset folds
+    computation_progress['fold'] = 0
+    pickle.dump(computation_progress,
+                open(base_out_folder +
+                     "/computation_progress.pickle", "wb"))
+
     mean_train_scores = np.mean(np.vstack(fold_train_scores), axis=0)
     mean_test_scores = np.mean(np.vstack(fold_test_scores), axis=0)
     mean_train_infer_scores = np.mean(np.vstack(fold_train_inf_scores), axis=0)
@@ -436,6 +442,12 @@ def grid_search(X, Y, param_lists, file_prefix=""):
         pickle.dump(computation_progress,
                     open(base_out_folder +
                          "/computation_progress.pickle", "wb"))
+
+    # reset models
+    computation_progress['model'] = 0
+    pickle.dump(computation_progress,
+                open(base_out_folder +
+                     "/computation_progress.pickle", "wb"))
 
     logger.info("Grid Search finished")
     logger.info("Stored results DataFrame in " + filename_results_df)
