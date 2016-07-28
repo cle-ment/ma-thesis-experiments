@@ -26,7 +26,6 @@ from sklearn import linear_model
 
 TIMESTAMP = str(datetime.datetime.now())
 EXP_NAME = __file__.rstrip(".py")
-# EXP_NAME = "dist_rep"
 VALIDATION_SIZE = 0.2
 CORES = multiprocessing.cpu_count()
 
@@ -72,7 +71,10 @@ logger.addHandler(fh)
 
 logger.propagate = False
 
+
 # --- Functions
+
+# -- Evaluation
 
 
 def cov(x, y):
@@ -125,6 +127,8 @@ def score(estimator, X_train, X_train_inferred, X_test_inferred,
     mcc_test_inferred = MCC(predictions_test, y_test)
 
     return mcc_train, mcc_test, mcc_train_inferred, mcc_test_inferred
+
+# -- Training and Testing
 
 
 def read_corpus(documents, tokens_only=False):
@@ -401,8 +405,12 @@ def grid_search(X, Y, param_lists, file_prefix=""):
         (mean_train_scores, mean_test_scores,
          mean_train_infer_scores, mean_test_infer_scores) = scores
 
-        max_test_score_i = np.nanargmax(mean_test_scores)
-        max_test_inf_score_i = np.nanargmax(mean_test_infer_scores)
+        try:
+            max_test_score_i = np.nanargmax(mean_test_scores)
+            max_test_inf_score_i = np.nanargmax(mean_test_infer_scores)
+        except:
+            max_test_score_i = 0
+            max_test_inf_score_i = 0
 
         best_train_score = mean_train_scores[max_test_score_i]
         best_test_score = mean_test_scores[max_test_score_i]
@@ -636,7 +644,7 @@ if (computation_progress['experiment'] == 3):
             [2], # min_count=2
             [0, 1], # hs=1
             [CORES], # workers=CORES
-            [0, 1e-4, 1e-5, 1e-6], # sample=1e-5
+            [0], # sample=1e-5
             [10] # iter=10
         ]
 
