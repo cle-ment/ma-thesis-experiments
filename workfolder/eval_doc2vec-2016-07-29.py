@@ -560,7 +560,7 @@ if (computation_progress['experiment'] == 1):
     param_list = [
             [5],  # folds=5
             [estimator_logreg], # estimator=sklearn.[...]
-            [150], # steps=100
+            [50], # steps=100
             [0.025], # alpha_start=0.025
             [0.0001], # alpha_end=0.0001
             [10], # infer_steps=5
@@ -630,7 +630,7 @@ if (computation_progress['experiment'] == 3):
     param_list = [
             [5],  # folds=5
             [estimator_logreg], # estimator=sklearn.[...]
-            [150], # steps=100
+            [50], # steps=100
             [0.025], # alpha_start=0.025
             [0.0001], # alpha_end=0.0001
             [10], # infer_steps=5
@@ -665,7 +665,7 @@ if (computation_progress['experiment'] == 4):
     param_list = [
             [5],  # folds=5
             [estimator_logreg], # estimator=sklearn.[...]
-            [150], # steps=100
+            [50], # steps=100
             [0.025], # alpha_start=0.025
             [0.0001], # alpha_end=0.0001
             [10], # infer_steps=5
@@ -700,7 +700,7 @@ if (computation_progress['experiment'] == 5):
     param_list = [
             [5],  # folds=5
             [estimator_logreg], # estimator=sklearn.[...]
-            [150], # steps=100
+            [50], # steps=100
             [0.025], # alpha_start=0.025
             [0.0001], # alpha_end=0.0001
             [10], # infer_steps=5
@@ -735,7 +735,7 @@ if (computation_progress['experiment'] == 6):
     param_list = [
             [5],  # folds=5
             [estimator_logreg], # estimator=sklearn.[...]
-            [150], # steps=100
+            [50], # steps=100
             [0.025], # alpha_start=0.025
             [0.0001], # alpha_end=0.0001
             [10], # infer_steps=5
