@@ -11,6 +11,8 @@ from itertools import compress
 import os
 import multiprocessing
 
+from subprocess import call
+
 import numpy as np
 import pandas as pd
 
@@ -29,21 +31,21 @@ EXP_NAME = __file__.rstrip(".py")
 VALIDATION_SIZE = 0.2
 CORES = multiprocessing.cpu_count()
 
-outfolder = "../output"
-if not os.path.exists(outfolder):
-    os.makedirs(outfolder)
+OUTFOLDER = "../output"
+if not os.path.exists(OUTFOLDER):
+    os.makedirs(OUTFOLDER)
 
-base_out_folder = outfolder + "/" + EXP_NAME
-if not os.path.exists(base_out_folder):
-    os.makedirs(base_out_folder)
+BASE_OUTFOLDER = OUTFOLDER + "/" + EXP_NAME
+if not os.path.exists(BASE_OUTFOLDER):
+    os.makedirs(BASE_OUTFOLDER)
 
-logfolder = base_out_folder + "/" + "logs"
-if not os.path.exists(logfolder):
-    os.makedirs(logfolder)
+LOGFOLDER = BASE_OUTFOLDER + "/" + "logs"
+if not os.path.exists(LOGFOLDER):
+    os.makedirs(LOGFOLDER)
 
-resultfolder = base_out_folder + "/" + "results"
-if not os.path.exists(resultfolder):
-    os.makedirs(resultfolder)
+RESULTFOLDER = BASE_OUTFOLDER + "/" + "results"
+if not os.path.exists(RESULTFOLDER):
+    os.makedirs(RESULTFOLDER)
 
 # --- Logger setup
 
@@ -55,7 +57,7 @@ logger.setLevel(logging.INFO)
 ch = logging.StreamHandler()
 ch.setLevel(logging.DEBUG)
 # create file handler which logs even debug messages
-fh = logging.FileHandler(logfolder + '/logger.log')
+fh = logging.FileHandler(LOGFOLDER + '/logger.log')
 fh.setLevel(logging.INFO)
 
 # create formatter
@@ -311,15 +313,11 @@ def train_eval_doc2vec_CV(
 
         # update status
         computation_progress['fold'] = fold
-        pickle.dump(computation_progress,
-                    open(base_out_folder +
-                         "/computation_progress.pickle", "wb"))
+        store_results(computation_progress)
 
     # reset folds
     computation_progress['fold'] = 0
-    pickle.dump(computation_progress,
-                open(base_out_folder +
-                     "/computation_progress.pickle", "wb"))
+    store_results(computation_progress)
 
     mean_train_scores = np.mean(np.vstack(fold_train_scores), axis=0)
     mean_test_scores = np.mean(np.vstack(fold_test_scores), axis=0)
@@ -333,23 +331,23 @@ def train_eval_doc2vec_CV(
 def grid_search(X, Y, param_lists, file_prefix=""):
     """ Do a grid search over all combinations of given parameters
     param_list = [
-            [4, 5], #folds=5
-            [estimator], # estimator=sklearn.linear_model.LinearRegression()
-            [10], # steps=100
-            [0.025], # alpha_start=0.025
-            [0.0001], # alpha_end=0.0001
-            [5], # infer_steps=5
-            [0.0001], # infer_min_alpha=0.0001
-            [0.1], # infer_alpha=0.1
-            [True], # evaluate=True
-            [0], # dm=0
-            [100], # size=300
-            [10], # window=10
-            [3], # negative=3
-            [2], # min_count=2
-            [0], # hs=0
-            [CORES], # workers=CORES
-            [0], # sample=1e-5
+            [4, 5],  #folds=5
+            [estimator],  # estimator=sklearn.linear_model.LinearRegression()
+            [10],  # steps=100
+            [0.025],  # alpha_start=0.025
+            [0.0001],  # alpha_end=0.0001
+            [5],  # infer_steps=5
+            [0.0001],  # infer_min_alpha=0.0001
+            [0.1],  # infer_alpha=0.1
+            [True],  # evaluate=True
+            [0],  # dm=0
+            [100],  # size=300
+            [10],  # window=10
+            [3],  # negative=3
+            [2],  # min_count=2
+            [0],  # hs=0
+            [CORES],  # workers=CORES
+            [0],  # sample=1e-5
             [10] # iter=10
         ]
     """
@@ -433,29 +431,25 @@ def grid_search(X, Y, param_lists, file_prefix=""):
                               'mcc infer train', 'mcc infer test']
 
         # store results as dataframe and csv
-        filename_results_df = (resultfolder + "/" +
+        filename_results_df = (RESULTFOLDER + "/" +
                                file_prefix + "results_df.pickle")
         pickle.dump(results_df, open(filename_results_df, "wb"))
-        results_df.to_csv(resultfolder + "/" + file_prefix + "results_df.csv")
+        results_df.to_csv(RESULTFOLDER + "/" + file_prefix + "results_df.csv")
         # store param_lists and model_scores
-        filename_param_lists = (resultfolder + "/" +
+        filename_param_lists = (RESULTFOLDER + "/" +
                                 file_prefix + "param_lists.pickle")
         pickle.dump(param_lists, open(filename_param_lists, "wb"))
-        filename_model_scores = (resultfolder + "/" +
+        filename_model_scores = (RESULTFOLDER + "/" +
                                  file_prefix + "model_scores.pickle")
         pickle.dump(model_scores, open(filename_model_scores, "wb"))
 
         # update status
         computation_progress['model'] = m
-        pickle.dump(computation_progress,
-                    open(base_out_folder +
-                         "/computation_progress.pickle", "wb"))
+        store_results(computation_progress)
 
     # reset models
     computation_progress['model'] = 0
-    pickle.dump(computation_progress,
-                open(base_out_folder +
-                     "/computation_progress.pickle", "wb"))
+    store_results(computation_progress)
 
     logger.info("Grid Search finished")
     logger.info("Stored results DataFrame in " + filename_results_df)
@@ -463,6 +457,17 @@ def grid_search(X, Y, param_lists, file_prefix=""):
     logger.info("Stored model_scores in " + filename_model_scores)
 
     return results_df, model_scores
+
+
+# -- Storing results to server in case of interuption
+
+
+def store_results(computation_progress,
+                  source="/home/ubuntu/thesis-experiments/output/",
+                  target="clemens@cwestrup.de:thesis/output"):
+    pickle.dump(computation_progress,
+                open(BASE_OUTFOLDER + "/computation_progress.pickle", "wb"))
+    call(["rsync", "-av", "--update", "--delete", "--force", source, target])
 
 
 # --- Initialization Dataset and Classifier
@@ -505,14 +510,13 @@ estimator_logreg = sklearn.multiclass.OneVsRestClassifier(
 # check where computation was left of in case of interuption
 try:
     computation_progress = pickle.load(
-        open(base_out_folder + "/computation_progress.pickle", "rb"))
+        open(BASE_OUTFOLDER + "/computation_progress.pickle", "rb"))
 except:
     # no computation was done yet so create a progress file_prefix
     computation_progress = {'experiment': 0,
                             'model': 0,
                             'fold': 0}
-    pickle.dump(computation_progress,
-                open(base_out_folder + "/computation_progress.pickle", "wb"))
+    store_results(computation_progress)
 
 # --- Test parameters
 
@@ -548,8 +552,7 @@ if (computation_progress['experiment'] == 0):
 
     # update status
     computation_progress['experiment'] = 1
-    pickle.dump(computation_progress,
-                open(base_out_folder + "/computation_progress.pickle", "wb"))
+    store_results(computation_progress)
 
 
 # -- Vector Size (experiment 1)
@@ -559,23 +562,23 @@ if (computation_progress['experiment'] == 1):
 
     param_list = [
             [5],  # folds=5
-            [estimator_logreg], # estimator=sklearn.[...]
-            [150], # steps=100
-            [0.025], # alpha_start=0.025
-            [0.0001], # alpha_end=0.0001
-            [10], # infer_steps=5
-            [0.0001], # infer_min_alpha=0.0001
-            [0.1], # infer_alpha=0.1
-            [True], # evaluate=True
-            [1], # dm=0
-            [2, 10, 100, 300], # size=300
-            [10], # window=10
-            [3], # negative=3
-            [2], # min_count=2
-            [1], # hs=1
-            [CORES], # workers=CORES
-            [0], # sample=1e-5
-            [10] # iter=10
+            [estimator_logreg],  # estimator=sklearn.[...]
+            [150],  # steps=100
+            [0.025],  # alpha_start=0.025
+            [0.0001],  # alpha_end=0.0001
+            [10],  # infer_steps=5
+            [0.0001],  # infer_min_alpha=0.0001
+            [0.1],  # infer_alpha=0.1
+            [True],  # evaluate=True
+            [1],  # dm=0
+            [2, 10, 100, 300],  # size=300
+            [10],  # window=10
+            [3],  # negative=3
+            [2],  # min_count=2
+            [1],  # hs=1
+            [CORES],  # workers=CORES
+            [0],  # sample=1e-5
+            [10]  # iter=10
         ]
 
     results_df, model_scores = grid_search(X_train, Y_1hot_train, param_list,
@@ -583,8 +586,7 @@ if (computation_progress['experiment'] == 1):
 
     # update status
     computation_progress['experiment'] = 2
-    pickle.dump(computation_progress,
-                open(base_out_folder + "/computation_progress.pickle", "wb"))
+    store_results(computation_progress)
 
 
 # -- Frequent Word Sub-Sampling (experiment 2)
@@ -594,23 +596,23 @@ if (computation_progress['experiment'] == 2):
 
     param_list = [
             [5],  # folds=5
-            [estimator_logreg], # estimator=sklearn.[...]
-            [100], # steps=100
-            [0.025], # alpha_start=0.025
-            [0.0001], # alpha_end=0.0001
-            [10], # infer_steps=5
-            [0.0001], # infer_min_alpha=0.0001
-            [0.1], # infer_alpha=0.1
-            [True], # evaluate=True
-            [1], # dm=0
-            [100], # size=300
-            [10], # window=10
-            [3], # negative=3
-            [2], # min_count=2
-            [1], # hs=1
-            [CORES], # workers=CORES
-            [0, 1e-4, 1e-5, 1e-6], # sample=1e-5
-            [10] # iter=10
+            [estimator_logreg],  # estimator=sklearn.[...]
+            [100],  # steps=100
+            [0.025],  # alpha_start=0.025
+            [0.0001],  # alpha_end=0.0001
+            [10],  # infer_steps=5
+            [0.0001],  # infer_min_alpha=0.0001
+            [0.1],  # infer_alpha=0.1
+            [True],  # evaluate=True
+            [1],  # dm=0
+            [100],  # size=300
+            [10],  # window=10
+            [3],  # negative=3
+            [2],  # min_count=2
+            [1],  # hs=1
+            [CORES],  # workers=CORES
+            [0, 1e-4, 1e-5, 1e-6],  # sample=1e-5
+            [10]  # iter=10
         ]
 
     results_df, model_scores = grid_search(X_train, Y_1hot_train, param_list,
@@ -618,8 +620,7 @@ if (computation_progress['experiment'] == 2):
 
     # update status
     computation_progress['experiment'] = 3
-    pickle.dump(computation_progress,
-                open(base_out_folder + "/computation_progress.pickle", "wb"))
+    store_results(computation_progress)
 
 
 # -- Hierarchical Softmax (experiment 3)
@@ -629,23 +630,23 @@ if (computation_progress['experiment'] == 3):
 
     param_list = [
             [5],  # folds=5
-            [estimator_logreg], # estimator=sklearn.[...]
-            [150], # steps=100
-            [0.025], # alpha_start=0.025
-            [0.0001], # alpha_end=0.0001
-            [10], # infer_steps=5
-            [0.0001], # infer_min_alpha=0.0001
-            [0.1], # infer_alpha=0.1
-            [True], # evaluate=True
-            [1], # dm=0
-            [100], # size=300
-            [10], # window=10
-            [3], # negative=3
-            [2], # min_count=2
-            [0, 1], # hs=1
-            [CORES], # workers=CORES
-            [0], # sample=1e-5
-            [10] # iter=10
+            [estimator_logreg],  # estimator=sklearn.[...]
+            [150],  # steps=100
+            [0.025],  # alpha_start=0.025
+            [0.0001],  # alpha_end=0.0001
+            [10],  # infer_steps=5
+            [0.0001],  # infer_min_alpha=0.0001
+            [0.1],  # infer_alpha=0.1
+            [True],  # evaluate=True
+            [1],  # dm=0
+            [100],  # size=300
+            [10],  # window=10
+            [3],  # negative=3
+            [2],  # min_count=2
+            [0, 1],  # hs=1
+            [CORES],  # workers=CORES
+            [0],  # sample=1e-5
+            [10]  # iter=10
         ]
 
     results_df, model_scores = grid_search(X_train, Y_1hot_train, param_list,
@@ -653,8 +654,7 @@ if (computation_progress['experiment'] == 3):
 
     # update status
     computation_progress['experiment'] = 4
-    pickle.dump(computation_progress,
-                open(base_out_folder + "/computation_progress.pickle", "wb"))
+    store_results(computation_progress)
 
 
 # -- Negative Sampling (experiment 4)
@@ -664,23 +664,23 @@ if (computation_progress['experiment'] == 4):
 
     param_list = [
             [5],  # folds=5
-            [estimator_logreg], # estimator=sklearn.[...]
-            [150], # steps=100
-            [0.025], # alpha_start=0.025
-            [0.0001], # alpha_end=0.0001
-            [10], # infer_steps=5
-            [0.0001], # infer_min_alpha=0.0001
-            [0.1], # infer_alpha=0.1
-            [True], # evaluate=True
-            [1], # dm=0
-            [100], # size=300
-            [10], # window=10
-            [0, 2, 4, 6], # negative=3
-            [2], # min_count=2
-            [1], # hs=1
-            [CORES], # workers=CORES
-            [0], # sample=1e-5
-            [10] # iter=10
+            [estimator_logreg],  # estimator=sklearn.[...]
+            [150],  # steps=100
+            [0.025],  # alpha_start=0.025
+            [0.0001],  # alpha_end=0.0001
+            [10],  # infer_steps=5
+            [0.0001],  # infer_min_alpha=0.0001
+            [0.1],  # infer_alpha=0.1
+            [True],  # evaluate=True
+            [1],  # dm=0
+            [100],  # size=300
+            [10],  # window=10
+            [0, 2, 4, 6],  # negative=3
+            [2],  # min_count=2
+            [1],  # hs=1
+            [CORES],  # workers=CORES
+            [0],  # sample=1e-5
+            [10]  # iter=10
         ]
 
     results_df, model_scores = grid_search(X_train, Y_1hot_train, param_list,
@@ -688,8 +688,7 @@ if (computation_progress['experiment'] == 4):
 
     # update status
     computation_progress['experiment'] = 5
-    pickle.dump(computation_progress,
-                open(base_out_folder + "/computation_progress.pickle", "wb"))
+    store_results(computation_progress)
 
 
 # -- Window Size (experiment 5)
@@ -699,23 +698,23 @@ if (computation_progress['experiment'] == 5):
 
     param_list = [
             [5],  # folds=5
-            [estimator_logreg], # estimator=sklearn.[...]
-            [150], # steps=100
-            [0.025], # alpha_start=0.025
-            [0.0001], # alpha_end=0.0001
-            [10], # infer_steps=5
-            [0.0001], # infer_min_alpha=0.0001
-            [0.1], # infer_alpha=0.1
-            [True], # evaluate=True
-            [1], # dm=0
-            [100], # size=300
-            [5, 10, 15], # window=10
-            [3], # negative=3
-            [2], # min_count=2
-            [1], # hs=1
-            [CORES], # workers=CORES
-            [0], # sample=1e-5
-            [10] # iter=10
+            [estimator_logreg],  # estimator=sklearn.[...]
+            [150],  # steps=100
+            [0.025],  # alpha_start=0.025
+            [0.0001],  # alpha_end=0.0001
+            [10],  # infer_steps=5
+            [0.0001],  # infer_min_alpha=0.0001
+            [0.1],  # infer_alpha=0.1
+            [True],  # evaluate=True
+            [1],  # dm=0
+            [100],  # size=300
+            [5, 10, 15],  # window=10
+            [3],  # negative=3
+            [2],  # min_count=2
+            [1],  # hs=1
+            [CORES],  # workers=CORES
+            [0],  # sample=1e-5
+            [10]  # iter=10
         ]
 
     results_df, model_scores = grid_search(X_train, Y_1hot_train, param_list,
@@ -723,8 +722,7 @@ if (computation_progress['experiment'] == 5):
 
     # update status
     computation_progress['experiment'] = 6
-    pickle.dump(computation_progress,
-                open(base_out_folder + "/computation_progress.pickle", "wb"))
+    store_results(computation_progress)
 
 
 # -- PV-DBOW versus PM-DV (experiment 6)
@@ -734,23 +732,23 @@ if (computation_progress['experiment'] == 6):
 
     param_list = [
             [5],  # folds=5
-            [estimator_logreg], # estimator=sklearn.[...]
-            [150], # steps=100
-            [0.025], # alpha_start=0.025
-            [0.0001], # alpha_end=0.0001
-            [10], # infer_steps=5
-            [0.0001], # infer_min_alpha=0.0001
-            [0.1], # infer_alpha=0.1
-            [True], # evaluate=True
-            [0, 1], # dm=0
-            [100], # size=300
-            [10], # window=10
-            [3], # negative=3
-            [2], # min_count=2
-            [1], # hs=1
-            [CORES], # workers=CORES
-            [0], # sample=1e-5
-            [10] # iter=10
+            [estimator_logreg],  # estimator=sklearn.[...]
+            [150],  # steps=100
+            [0.025],  # alpha_start=0.025
+            [0.0001],  # alpha_end=0.0001
+            [10],  # infer_steps=5
+            [0.0001],  # infer_min_alpha=0.0001
+            [0.1],  # infer_alpha=0.1
+            [True],  # evaluate=True
+            [0, 1],  # dm=0
+            [100],  # size=300
+            [10],  # window=10
+            [3],  # negative=3
+            [2],  # min_count=2
+            [1],  # hs=1
+            [CORES],  # workers=CORES
+            [0],  # sample=1e-5
+            [10]  # iter=10
         ]
 
     results_df, model_scores = grid_search(X_train, Y_1hot_train, param_list,
@@ -758,10 +756,42 @@ if (computation_progress['experiment'] == 6):
 
     # update status
     computation_progress['experiment'] = 7
-    pickle.dump(computation_progress,
-                open(base_out_folder + "/computation_progress.pickle", "wb"))
+    store_results(computation_progress)
 
 
 # --- Grid search over best candidates
+#
+# if (computation_progress['experiment'] == 6):
+#     logger.info("#### Running: PV-DBOW versus PM-DV (experiment 6)")
+#
+#     param_list = [
+#             [5],  # folds=5
+#             [estimator_logreg],  # estimator=sklearn.[...]
+#             [150],  # steps=100
+#             [0.025],  # alpha_start=0.025
+#             [0.0001],  # alpha_end=0.0001
+#             [10],  # infer_steps=5
+#             [0.0001],  # infer_min_alpha=0.0001
+#             [0.1],  # infer_alpha=0.1
+#             [True],  # evaluate=True
+#             [0],  # dm=0
+#             [100],  # size=300
+#             [10],  # window=10
+#             [3],  # negative=3
+#             [2],  # min_count=2
+#             [1],  # hs=1
+#             [CORES],  # workers=CORES
+#             [0],  # sample=1e-5
+#             [10]  # iter=10
+#         ]
+#
+#     results_df, model_scores = grid_search(X_train, Y_1hot_train, param_list,
+#                                            file_prefix="dm")
+#
+#     # update status
+#     computation_progress['experiment'] = 7
+#     store_results(computation_progress)
+#
+
 
 logger.info("Done.")

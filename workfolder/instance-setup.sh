@@ -1,13 +1,19 @@
 #!/bin/bash
 
-# attach volume
-aws ec2 attach-volume --volume-id vol-0da838dca9e28e150 --instance-id i-01474ef662b89480 --device /dev/sdf
+# clone repo (replace password)
+git clone https://cle-ment:XXXXXXX@github.com/cle-ment/thesis-experiments /home/ubuntu/thesis-experiments
 
-# mount the data storage
-# create mountpoint
-sudo mkdir /data
-# mount device
-sudo mount xvdb /data
+# move data into workfolder
+mv /home/ubuntu/2016-07-aws-experiments/workfolder/data /home/ubuntu/thesis-experiments/workfolder/data
 
-# run / continue computation
-nohup python -u /data/experiments/2016-07-aws-experiments/workfolder > /data/experiments/2016-07-aws-experiments/workfolder/dist_rep-grid-search.out &
+# remove old experiments folder
+rm -rf /home/ubuntu/2016-07-aws-experiments
+
+# make output dir
+mkdir thesis-experiments/output
+
+# copy previous output to continue computation (if available)
+scp -r clemens@cwestrup.de:/home/clemens/thesis/output/ /home/ubuntu/thesis-experiments/
+
+# run computation
+python /home/ubuntu/thesis-experiments/workfolder/eval_doc2vec.py
