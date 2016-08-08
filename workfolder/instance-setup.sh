@@ -19,7 +19,7 @@ chown -R ubuntu:ubuntu /home/ubuntu/thesis-experiments/output
 scp -r clemens@cwestrup.de:/home/clemens/thesis/output/ /home/ubuntu/thesis-experiments/
 
 # prepare .bash_profile to load enviroment when execiting command as user 'ubuntu'
-mv /home/ubuntu/thesis-experiments/--.bash_profile /home/ubuntu/thesis-experiments/.bash_profile
+mv /home/ubuntu/thesis-experiments/workfolder/--.bash_profile /home/ubuntu/.bash_profile
 
 # run computation
-sudo su --login ubuntu -c "cd /home/ubuntu/thesis-experiments/workfolder; python eval_doc2vec.py"
+su --login ubuntu -c "cd /home/ubuntu/thesis-experiments/workfolder; python eval_doc2vec.py"
