@@ -760,38 +760,37 @@ if (computation_progress['experiment'] == 6):
 
 
 # --- Grid search over best candidates
-#
-# if (computation_progress['experiment'] == 6):
-#     logger.info("#### Running: PV-DBOW versus PM-DV (experiment 6)")
-#
-#     param_list = [
-#             [5],  # folds=5
-#             [estimator_logreg],  # estimator=sklearn.[...]
-#             [150],  # steps=100
-#             [0.025],  # alpha_start=0.025
-#             [0.0001],  # alpha_end=0.0001
-#             [10],  # infer_steps=5
-#             [0.0001],  # infer_min_alpha=0.0001
-#             [0.1],  # infer_alpha=0.1
-#             [True],  # evaluate=True
-#             [0],  # dm=0
-#             [100],  # size=300
-#             [10],  # window=10
-#             [3],  # negative=3
-#             [2],  # min_count=2
-#             [1],  # hs=1
-#             [CORES],  # workers=CORES
-#             [0],  # sample=1e-5
-#             [10]  # iter=10
-#         ]
-#
-#     results_df, model_scores = grid_search(X_train, Y_1hot_train, param_list,
-#                                            file_prefix="dm")
-#
-#     # update status
-#     computation_progress['experiment'] = 7
-#     store_results(computation_progress)
-#
+
+if (computation_progress['experiment'] == 7):
+    logger.info("#### Running: Best hyperparameter combination (experiment 7)")
+
+    param_list = [
+            [5],  # folds=5
+            [estimator_logreg],  # estimator=sklearn.[...]
+            [250],  # steps=100
+            [0.025],  # alpha_start=0.025
+            [0.0001],  # alpha_end=0.0001
+            [10, 100],  # infer_steps=5
+            [0.0001],  # infer_min_alpha=0.0001
+            [0.1],  # infer_alpha=0.1
+            [True],  # evaluate=True
+            [0],  # dm=0
+            [6, 10, 300],  # size=300
+            [5],  # window=10
+            [2],  # negative=3
+            [2],  # min_count=2
+            [0, 1],  # hs=1
+            [CORES],  # workers=CORES
+            [1e-4],  # sample=1e-5
+            [10]  # iter=10
+        ]
+
+    results_df, model_scores = grid_search(X_train, Y_1hot_train, param_list,
+                                           file_prefix="best")
+
+    # update status
+    computation_progress['experiment'] = 8
+    store_results(computation_progress)
 
 
 logger.info("Done.")
