@@ -15,11 +15,11 @@ mkdir /home/ubuntu/thesis-experiments/output
 chmod -R 777 /home/ubuntu/thesis-experiments/output
 chown -R ubuntu:ubuntu /home/ubuntu/thesis-experiments/output
 
-# copy previous output to continue computation (if available)
-su --login ubuntu -c "scp -r clemens@cwestrup.de:/home/clemens/thesis/output/ /home/ubuntu/thesis-experiments/"
-
 # prepare .bash_profile to load enviroment when execiting command as user 'ubuntu'
 mv /home/ubuntu/thesis-experiments/workfolder/--.bash_profile /home/ubuntu/.bash_profile
+
+# copy previous output to continue computation (if available)
+su --login ubuntu -c "scp -r clemens@cwestrup.de:/home/clemens/thesis/output/ /home/ubuntu/thesis-experiments/"
 
 # run computation
 su --login ubuntu -c "cd /home/ubuntu/thesis-experiments/workfolder; python eval_doc2vec.py"
