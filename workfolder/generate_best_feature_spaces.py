@@ -57,14 +57,14 @@ if not os.path.exists(RESULTFOLDER):
 
 # create logger
 logger = logging.getLogger(EXP_NAME)
-logger.setLevel(logging.INFO)
+logger.setLevel(logging.DEBUG)
 
 # create console handler and set level to debug
 ch = logging.StreamHandler()
 ch.setLevel(logging.DEBUG)
 # create file handler which logs even debug messages
 fh = logging.FileHandler(LOGFOLDER + '/logger.log')
-fh.setLevel(logging.INFO)
+fh.setLevel(logging.DEBUG)
 
 # create formatter
 formatter = logging.Formatter('%(asctime)s | %(message)s')
@@ -91,7 +91,7 @@ label_array = np.array(df_conf['0_label'])
 lb = sklearn.preprocessing.LabelBinarizer()
 lb.fit(label_array)
 # store them
-pickle.dump(lb, open(BASE_OUTFOLDER + "/sentences_lb.pickle", "wb"))
+pickle.dump(lb, open(RESULTFOLDER + "/lb.pickle", "wb"))
 
 data_Y = lb.transform(label_array)
 data_X = np.array(df_conf['0-sentence'])
@@ -119,13 +119,13 @@ for i in range(0, num_folds):
     folds_train_Y.append(np.vstack(train_y))
 
 pickle.dump(folds_train_X,
-            open(BASE_OUTFOLDER + "/sentences_folds_train_X.pickle", "wb"))
+            open(RESULTFOLDER + "/folds_train_X.pickle", "wb"))
 pickle.dump(folds_train_Y,
-            open(BASE_OUTFOLDER + "/sentences_folds_train_Y.pickle", "wb"))
+            open(RESULTFOLDER + "/folds_train_Y.pickle", "wb"))
 pickle.dump(folds_test_X,
-            open(BASE_OUTFOLDER + "/sentences_folds_test_X.pickle", "wb"))
+            open(RESULTFOLDER + "/folds_test_X.pickle", "wb"))
 pickle.dump(folds_test_Y,
-            open(BASE_OUTFOLDER + "/sentences_folds_test_Y.pickle", "wb"))
+            open(RESULTFOLDER + "/folds_test_Y.pickle", "wb"))
 
 # just to make sure we don't even try to use them,
 # kill the test set labels :D
@@ -156,9 +156,11 @@ for i in range(0, num_folds):
     features_ngrams_test.append(tfidf_vect.transform(folds_test_X[i]))
 
 pickle.dump(features_ngrams_test,
-            open("sentences_features_ngrams_test.pickle", "wb"))
+            open(RESULTFOLDER +
+                 "/features_ngrams_test.pickle", "wb"))
 pickle.dump(features_ngrams_train,
-            open("sentences_features_ngrams_train.pickle", "wb"))
+            open(RESULTFOLDER +
+                 "/features_ngrams_train.pickle", "wb"))
 
 logger.info("Done")
 
@@ -197,9 +199,9 @@ for i in range(0, num_folds):
     features_bom_test.append(build_bagofmeans(folds_test_X[i]))
 
 pickle.dump(features_bom_train,
-            open("sentences_features_bom_train.pickle", "wb"))
+            open(RESULTFOLDER + "/features_bom_train.pickle", "wb"))
 pickle.dump(features_bom_test,
-            open("sentences_features_bom_test.pickle", "wb"))
+            open(RESULTFOLDER + "/features_bom_test.pickle", "wb"))
 
 logger.info("Done")
 
@@ -242,7 +244,6 @@ def score(estimator, X_train, Y_train):
     """ Evaluate the performance on given test and training data using the
         estimator (classifier) provided
     """
-
     estimator.fit(X_train, Y_train)
     predictions_train = estimator.predict(X_train)
     mcc_train = MCC(predictions_train, Y_train)
@@ -278,8 +279,7 @@ def infer_vectors(model, corpus, steps, min_alpha, alpha):
 
 
 def train_eval_doc2vec(
-    model, corpus_train, y_train,
-    estimator=sklearn.linear_model.LinearRegression(),
+    model, corpus_train, corpus_test, y_train,
     steps=100, alpha_start=0.025, alpha_end=0.0001,
         infer_steps=5, infer_min_alpha=0.0001, infer_alpha=0.1):
 
@@ -296,7 +296,8 @@ def train_eval_doc2vec(
     alpha_delta = (alpha - alpha_end) / steps
 
     # store and return the best model
-    best_model = None
+    best_features_train = None
+    best_features_test = None
     best_train_score = 0
 
     # copy training corpus for evaluation
@@ -319,12 +320,20 @@ def train_eval_doc2vec(
         features_train = infer_vectors(
             model, corpus_train_fixed,
             infer_steps, infer_min_alpha, infer_alpha)
+
+        estimator_logreg = sklearn.multiclass.OneVsRestClassifier(
+            sklearn.linear_model.LogisticRegression())
+
         # calculate scores
-        mcc_train = score(estimator, features_train, y_train)
+        mcc_train = score(estimator_logreg, features_train, y_train)
 
         # if a better score was achieved update the best model
         if mcc_train > best_train_score:
-            best_model = copy.deepcopy(model)
+            best_train_score = mcc_train
+            best_features_train = features_train
+            best_features_test = infer_vectors(
+                model, corpus_test,
+                infer_steps, infer_min_alpha, infer_alpha)
 
         # elapsed time
         now_time = time.time()
@@ -332,10 +341,10 @@ def train_eval_doc2vec(
         hours, rem = divmod(time_elapsed, 3600)
         minutes, seconds = divmod(rem, 60)
 
-        print("Step " + str(step + 1) + " / " + str(steps) +
-               " MCC train score: " + "{:0.3f}".format(mcc_train))
+        logger.debug("Step " + str(step + 1) + " / " + str(steps) +
+                     " MCC train score: " + "{:0.3f}".format(mcc_train))
 
-    return best_model
+    return best_features_train, best_features_test
 
 
 logger.info("Generating Paragraph Vectors")
@@ -344,8 +353,13 @@ features_pv_train = []
 features_pv_test = []
 
 # settings
-STEPS = 50
+STEPS = 10
 INFER_STEPS = 10
+INFER_ALPHA = 0.1
+INFER_MIN_ALPHA = 0.0001
+# INFER_STEPS = 2000
+# INFER_ALPHA = 0.2
+# INFER_MIN_ALPHA = 0.002
 
 # used classifier: logistic regression
 estimator_logreg = sklearn.multiclass.OneVsRestClassifier(
@@ -353,7 +367,7 @@ estimator_logreg = sklearn.multiclass.OneVsRestClassifier(
 
 for i in range(0, num_folds):
 
-    print("Fold", i+1, "/", num_folds)
+    logger.debug("Fold " + str(i+1) + " / " + str(num_folds))
 
     # prepare data as gensim corpera
     corpus_train = list(read_corpus(folds_train_X[i]))
@@ -361,28 +375,23 @@ for i in range(0, num_folds):
 
     # specify model
     model = gensim.models.Doc2Vec(
-        dm=0, size=10, window=5, negative=2, min_count=2,
-        hs=0, sample=1e-4, workers=CORES, iter=10)
+        dm=0, workers=CORES, iter=10)
     model.build_vocab(corpus_train)
 
-    # train model (and take the one with the highest test score)
-    best_model = train_eval_doc2vec(
-        model, corpus_train, folds_train_Y[i],
-        estimator=estimator_logreg, steps=STEPS, infer_steps=INFER_STEPS)
-
-    # infer training and test vectors
-    features_train = infer_vectors(
-        best_model, corpus_train, INFER_STEPS, 0.0001, 0.1)
-    features_test = infer_vectors(
-        best_model, corpus_test, INFER_STEPS, 0.0001, 0.1)
+    # train model and take features with highest score
+    features_train, features_test = train_eval_doc2vec(
+        model, corpus_train, corpus_test, folds_train_Y[i],
+        # estimator=estimator_logreg,
+        steps=STEPS, infer_steps=INFER_STEPS,
+        infer_alpha=INFER_ALPHA, infer_min_alpha=INFER_MIN_ALPHA)
 
     features_pv_train.append(features_train)
     features_pv_test.append(features_test)
 
 # store
 pickle.dump(features_pv_train,
-            open("sentences_features_pv_train.pickle", "wb"))
+            open(RESULTFOLDER + "/features_pv_train.pickle", "wb"))
 pickle.dump(features_pv_test,
-            open("sentences_features_pv_test.pickle", "wb"))
+            open(RESULTFOLDER + "/features_pv_test.pickle", "wb"))
 
 logger.info("Done")
