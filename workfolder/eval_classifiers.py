@@ -153,10 +153,10 @@ def MCC(x, y):
 
 def CV(estimator, parameters, X_train, X_test, Y_train, Y_test):
 
-    mcc_train_all = []
-    mcc_test_all = []
-
     for fold in range(0, num_folds):
+
+        if computation_progress['fold'] > fold:
+            continue
 
         logger.info("# - Fold " + str(fold+1) + " / " + str(num_folds))
 
@@ -164,34 +164,84 @@ def CV(estimator, parameters, X_train, X_test, Y_train, Y_test):
         grid_search = grid_search_cv(estimator,
                                      parameters,
                                      scoring=sklearn.metrics.make_scorer(MCC),
-                                     cv=5, n_jobs=1)
+                                     cv=5, n_jobs=CORES)
         grid_search.fit(X_train[fold], Y_train[fold])
+        logger.info("# - Done. Best params: " + str(grid_search.best_params_))
 
         predictions_train = grid_search.predict(X_train[fold])
         predictions_test = grid_search.predict(X_test[fold])
 
         mcc_train = MCC(predictions_train, Y_train[fold])
         mcc_test = MCC(predictions_test, Y_test[fold])
-        mcc_train_all.append(mcc_train)
-        mcc_test_all.append(mcc_test)
+        computation_progress['current_folds_train'].append(mcc_train)
+        computation_progress['current_folds_test'].append(mcc_test)
+        # update status
+        computation_progress['fold'] = fold+1
+        store_results(computation_progress)
 
-    logger.info("# Train: " + str(float(np.round(np.mean(mcc_train_all), 3))) +
+    # store results
+    mcc_train_all = computation_progress['current_folds_train']
+    mcc_test_all = computation_progress['current_folds_test']
+
+    logger.info("# -- MCC Train: " +
+                str(float(np.round(np.mean(mcc_train_all), 3))) +
                 " +- " + str(float(np.round(np.std(mcc_train_all), 3))))
-    logger.info("# Test:  " + str(float(np.round(np.mean(mcc_test_all), 3))) +
+    logger.info("# -- MCC Test:  " +
+                str(float(np.round(np.mean(mcc_test_all), 3))) +
                 " +- " + str(float(np.round(np.std(mcc_test_all), 3))))
 
+    # reset status
+    computation_progress['fold'] = 0
+    computation_progress['current_folds_train'] = []
+    computation_progress['current_folds_test'] = []
+    store_results(computation_progress)
 
-def CV_all_feature_spaces(estimator, parameters, folds_train_Y, folds_test_Y):
+    return np.mean(mcc_train_all), np.mean(mcc_test_all)
+
+
+def CV_all_feature_spaces(estimator, estimator_name, parameters,
+                          folds_train_Y, folds_test_Y):
+
     for i in range(len(features_names)):
+
+        if computation_progress['features'] > i:
+            continue
+
         logger.info("# -- " + features_names[i])
-        CV(estimator, parameters,
-           features_train[i], features_test[i],
-           folds_train_Y, folds_test_Y)
+        mcc_train, mcc_test = CV(estimator, parameters,
+                                 features_train[i], features_test[i],
+                                 folds_train_Y, folds_test_Y)
+
+        computation_progress['results'].append(
+            [features_names[i], estimator_name, mcc_train, mcc_test]
+        )
+        # store results in DataFrame
+        results_df = pd.DataFrame(computation_progress['results'])
+        results_df.columns = ['features', 'classifier',
+                              'mcc train', 'mcc test']
+        results_df.to_csv(RESULTFOLDER + "/results.csv")
+        # update status
+        computation_progress['features'] = i+1
+        store_results(computation_progress)
+
+    # when done reset status to 0
+    computation_progress['features'] = 0
+    store_results(computation_progress)
+
+
+# -- Storing results to server in case of interuption
+
+def store_results(computation_progress,
+                  source="/home/ubuntu/thesis-experiments/output/",
+                  target="clemens@cwestrup.de:thesis/output"):
+    pickle.dump(computation_progress,
+                open(BASE_OUTFOLDER + "/computation_progress.pickle", "wb"))
+    call(["rsync", "-av", "--update", "--delete", "--force", source, target])
 
 
 # --- prepare data
 
-# --- prepare features
+# -- prepare features
 
 # features_names = ['N-Grams', 'Bag-of-Means', 'Paragraph Vectors']
 # features_train = [features_ngrams_train, features_bom_train, features_pv_train]
@@ -217,49 +267,223 @@ for fold in range(len(folds_train_Y)):
     # folds_test_Y_cat.append(le.transform(folds_test_Y[fold]))
     folds_test_Y_cat.append(le.transform(folds_test_Y_cat_inv))
 
+# -- check where computation was left of in case of interuption
+try:
+    computation_progress = pickle.load(
+        open(BASE_OUTFOLDER + "/computation_progress.pickle", "rb"))
+except:
+    # no computation was done yet so create a progress file_prefix
+    computation_progress = {'classifier': 0,
+                            'features': 0,
+                            'fold': 0,
+                            'results': [],
+                            'current_folds_train': [],
+                            'current_folds_test': [],
+                            }
+    store_results(computation_progress)
+
+print(computation_progress['current_folds_train'])
+
 
 # --- Run classifiers
 
-# -- Logistic Regression
+if (computation_progress['classifier'] == 0):
 
-logger.info("# --- Logistic Regression (one-vs-rest)")
+    logger.info("# --- Logistic Regression (one-vs-rest)")
 
-classifier = sklearn.linear_model.LogisticRegression()
-estimator = sklearn.multiclass.OneVsRestClassifier(classifier)
-parameter_space = {
-    'estimator__C': [0.1, 1, 10, 100]
-}
-CV_all_feature_spaces(estimator, parameter_space,
-                      folds_train_Y, folds_test_Y)
-
-logger.info("# --- Logistic Regression (multinomial)")
-
-classifier = sklearn.linear_model.LogisticRegression(
-    multi_class="multinomial", solver='lbfgs')
-parameter_space = {
-    # 'C': [0.1, 1, 10, 100]
+    classifier = sklearn.linear_model.LogisticRegression()
+    estimator = sklearn.multiclass.OneVsRestClassifier(classifier)
+    parameter_space = {
+        'estimator__C': [0.01, 0.1, 1, 10]
     }
-CV_all_feature_spaces(classifier, parameter_space,
-                      folds_train_Y_cat, folds_test_Y_cat)
+    CV_all_feature_spaces(estimator, "Logistic Regression (one-vs-rest)",
+                          parameter_space, folds_train_Y, folds_test_Y)
 
-# # -- Decision Tree
-#
-# logger.info("# --- Decision Tree")
-#
-# classifier = sklearn.tree.DecisionTreeClassifier()
-# estimator = sklearn.multiclass.OneVsRestClassifier(classifier)
-# CV_all_feature_spaces(estimator)
-#
-# # -- Naive Bayes
-#
-# logger.info("# --- Naive Bayes")
-#
-# classifier = sklearn.naive_bayes.MultinomialNB()
-# estimator = sklearn.multiclass.OneVsRestClassifier(classifier)
-#
-# # -- Random Forest
-#
-# logger.info("# --- Random Forest")
-#
-# classifier = sklearn.ensemble.RandomForestClassifier()
-# estimator = sklearn.multiclass.OneVsRestClassifier(classifier)
+    # update status
+    computation_progress['classifier'] = 1
+    store_results(computation_progress)
+
+if (computation_progress['classifier'] == 1):
+
+    logger.info("# --- Logistic Regression (multinomial)")
+
+    classifier = sklearn.linear_model.LogisticRegression(
+        multi_class="multinomial", solver='lbfgs')
+    parameter_space = {
+        'C': [0.1, 1, 10, 100]
+        }
+    CV_all_feature_spaces(classifier, "Logistic Regression (multinomial)",
+                          parameter_space, folds_train_Y_cat, folds_test_Y_cat)
+
+    # update status
+    computation_progress['classifier'] = 2
+    store_results(computation_progress)
+
+if (computation_progress['classifier'] == 2):
+
+    logger.info("# --- Multinomial Naive Bayes (one-vs-rest)")
+
+    classifier = sklearn.naive_bayes.MultinomialNB()
+    estimator = sklearn.multiclass.OneVsRestClassifier(classifier)
+    parameter_space = {
+        'estimator__alpha': [0.1, 1, 10, 100, 1000]
+    }
+    CV_all_feature_spaces(estimator, "Multinomial Naive Bayes (one-vs-rest)",
+                          parameter_space, folds_train_Y, folds_test_Y)
+
+    # update status
+    computation_progress['classifier'] = 3
+    store_results(computation_progress)
+
+if (computation_progress['classifier'] == 3):
+
+    logger.info("# --- Multinomial Naive Bayes (multinomial)")
+
+    classifier = sklearn.naive_bayes.MultinomialNB()
+    parameter_space = {
+        'alpha': [0.1, 1, 10, 100, 1000]
+        }
+    CV_all_feature_spaces(classifier, "Multinomial Naive Bayes (multinomial)",
+                          parameter_space, folds_train_Y_cat, folds_test_Y_cat)
+
+    # update status
+    computation_progress['classifier'] = 4
+    store_results(computation_progress)
+
+if (computation_progress['classifier'] == 4):
+
+    logger.info("# --- Decision Tree (one-vs-rest)")
+
+    classifier = sklearn.tree.DecisionTreeClassifier()
+    estimator = sklearn.multiclass.OneVsRestClassifier(classifier)
+    parameter_space = {
+        'estimator__criterion': ['gini', 'entropy'],
+        'estimator__max_features': [None, 'auto', 'sqrt', 'log2']
+        }
+    CV_all_feature_spaces(estimator, "Decision Tree (one-vs-rest)",
+                          parameter_space, folds_train_Y, folds_test_Y)
+
+    # update status
+    computation_progress['classifier'] = 5
+    store_results(computation_progress)
+
+if (computation_progress['classifier'] == 5):
+
+    logger.info("# --- Decision Tree (multinomial)")
+
+    classifier = sklearn.tree.DecisionTreeClassifier()
+    parameter_space = {
+        'criterion': ['gini', 'entropy'],
+        'max_features': [None, 'auto', 'sqrt', 'log2']
+        }
+    CV_all_feature_spaces(classifier, "Decision Tree (multinomial)",
+                          parameter_space, folds_train_Y_cat, folds_test_Y_cat)
+
+    # update status
+    computation_progress['classifier'] = 6
+    store_results(computation_progress)
+
+if (computation_progress['classifier'] == 6):
+
+    logger.info("# --- Random Forest (one-vs-rest)")
+
+    classifier = sklearn.ensemble.RandomForestClassifier()
+    estimator = sklearn.multiclass.OneVsRestClassifier(classifier)
+    parameter_space = {
+        'estimator__n_estimators': [5, 10, 20],
+        'estimator__criterion': ['gini', 'entropy'],
+        'estimator__max_features': [None, 'auto', 'sqrt', 'log2']
+        }
+    CV_all_feature_spaces(estimator, "Random Forest (one-vs-rest)",
+                          parameter_space, folds_train_Y, folds_test_Y)
+
+    # update status
+    computation_progress['classifier'] = 7
+    store_results(computation_progress)
+
+if (computation_progress['classifier'] == 7):
+
+    logger.info("# --- Random Forest (multinomial)")
+
+    classifier = sklearn.ensemble.RandomForestClassifier()
+    parameter_space = {
+        'n_estimators': [5, 10, 20],
+        'criterion': ['gini', 'entropy'],
+        'max_features': [None, 'auto', 'sqrt', 'log2']
+        }
+    CV_all_feature_spaces(classifier, "Random Forest (multinomial)",
+                          parameter_space, folds_train_Y_cat, folds_test_Y_cat)
+
+    # update status
+    computation_progress['classifier'] = 8
+    store_results(computation_progress)
+
+if (computation_progress['classifier'] == 8):
+
+    logger.info("# --- k Nearest Neighbors (one-vs-rest)")
+
+    classifier = sklearn.neighbors.KNeighborsClassifier()
+    estimator = sklearn.multiclass.OneVsRestClassifier(classifier)
+    parameter_space = {
+        'estimator__n_neighbors': [3, 5, 10],
+        'estimator__weights': ['uniform', 'distance']
+        }
+    CV_all_feature_spaces(estimator, "k Nearest Neighbors (one-vs-rest)",
+                          parameter_space, folds_train_Y, folds_test_Y)
+
+    # update status
+    computation_progress['classifier'] = 9
+    store_results(computation_progress)
+
+if (computation_progress['classifier'] == 9):
+
+    logger.info("# --- k Nearest Neighbors (multinomial)")
+
+    classifier = sklearn.neighbors.KNeighborsClassifier()
+    parameter_space = {
+        'n_neighbors': [3, 5, 10],
+        'weights': ['uniform', 'distance']
+        }
+    CV_all_feature_spaces(classifier, "k Nearest Neighbors (multinomial)",
+                          parameter_space, folds_train_Y_cat, folds_test_Y_cat)
+
+    # update status
+    computation_progress['classifier'] = 10
+    store_results(computation_progress)
+
+if (computation_progress['classifier'] == 10):
+
+    logger.info("# --- SVM (one-vs-one)")
+
+    classifier = sklearn.svm.SVC()
+    parameter_space = {
+        'C': [0.1, 1, 5, 10],
+        'kernel': ['rbf', 'linear', 'poly', 'sigmoid'],
+        'degree': [2, 3, 4],
+        'gamma': ['auto', 0.1, 1, 10, 100]
+        }
+    CV_all_feature_spaces(classifier, "SVM (one-vs-one)",
+                          parameter_space, folds_train_Y_cat, folds_test_Y_cat)
+
+    # update status
+    computation_progress['classifier'] = 11
+    store_results(computation_progress)
+
+if (computation_progress['classifier'] == 11):
+
+    logger.info("# --- SVM (multinomial)")
+
+    classifier = sklearn.svm.LinearSVC(multi_class='crammer_singer')
+    parameter_space = {
+        'C': [0.1, 1, 5, 10]
+        }
+    CV_all_feature_spaces(classifier, "SVM (multinomial)",
+                          parameter_space, folds_train_Y_cat, folds_test_Y_cat)
+
+    # update status
+    computation_progress['classifier'] = 12
+    store_results(computation_progress)
+
+logger.info("Done.")
+
+# if (computation_progress['classifier'] == 12):
