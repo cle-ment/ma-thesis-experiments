@@ -462,9 +462,10 @@ def grid_search(X, Y, param_lists, file_prefix=""):
 # -- Storing results to server in case of interuption
 
 
-def store_results(computation_progress,
-                  source="/home/ubuntu/thesis-experiments/output/",
-                  target="clemens@cwestrup.de:thesis/output"):
+def store_results(
+    computation_progress,
+    source="/home/ubuntu/thesis-experiments/output/" + EXP_NAME + "/",
+        target="clemens@cwestrup.de:thesis/output/" + EXP_NAME):
     pickle.dump(computation_progress,
                 open(BASE_OUTFOLDER + "/computation_progress.pickle", "wb"))
     call(["rsync", "-av", "--update", "--delete", "--force", source, target])
