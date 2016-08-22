@@ -371,13 +371,13 @@ features_pv_train = []
 features_pv_test = []
 
 # settings
-STEPS = 10
-INFER_STEPS = 10
-INFER_ALPHA = 0.1
-INFER_MIN_ALPHA = 0.0001
-# INFER_STEPS = 2000
-# INFER_ALPHA = 0.2
-# INFER_MIN_ALPHA = 0.002
+# STEPS = 10
+# INFER_STEPS = 10
+# INFER_ALPHA = 0.1
+# INFER_MIN_ALPHA = 0.0001
+INFER_STEPS = 2000
+INFER_ALPHA = 0.2
+INFER_MIN_ALPHA = 0.002
 
 # used classifier: logistic regression
 estimator_logreg = sklearn.multiclass.OneVsRestClassifier(
@@ -391,9 +391,10 @@ for i in range(0, num_folds):
     corpus_train = list(read_corpus(folds_train_X[i]))
     corpus_test = list(read_corpus(folds_test_X[i], tokens_only=True))
 
-    # specify model
+    # specify model: best from eval_doc2vec results
     model = gensim.models.Doc2Vec(
-        dm=0, workers=CORES, iter=10)
+        window=8, negative=10, min_count=2, hs=1, sample=0, dm=0,
+        workers=CORES, iter=10)
     model.build_vocab(corpus_train)
 
     # train model and take features with highest score
@@ -413,3 +414,11 @@ pickle.dump(features_pv_test,
             open(RESULTFOLDER + "/features_pv_test.pickle", "wb"))
 
 logger.info("Done")
+
+logger.info("Syncing results to server")
+
+call(["rsync", "-av", "--update", "--delete", "--force",
+      RESULTFOLDER,
+      "clemens@cwestrup.de:thesis/output/" + EXP_NAME + "/results"])
+
+logger.info("Done.")
