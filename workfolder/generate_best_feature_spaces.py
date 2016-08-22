@@ -30,23 +30,6 @@ import sklearn.ensemble
 import sklearn.preprocessing
 
 
-# --- check if results are already there
-
-if (os.path.exists(RESULTFOLDER + "/lb.pickle") and
-    os.path.exists(RESULTFOLDER + "/folds_train_X.pickle") and
-    os.path.exists(RESULTFOLDER + "/folds_train_Y.pickle") and
-    os.path.exists(RESULTFOLDER + "/folds_test_X.pickle") and
-    os.path.exists(RESULTFOLDER + "/folds_test_Y.pickle") and
-    os.path.exists(RESULTFOLDER + "/features_ngrams_train.pickle") and
-    os.path.exists(RESULTFOLDER + "/features_ngrams_test.pickle") and
-    os.path.exists(RESULTFOLDER + "/features_bom_train.pickle") and
-    os.path.exists(RESULTFOLDER + "/features_bom_test.pickle") and
-    os.path.exists(RESULTFOLDER + "/features_pv_train.pickle") and
-        os.path.exists(RESULTFOLDER + "/features_pv_test.pickle")):
-
-    logger.info("Feature spaces already generated, exiting.")
-    sys.exit()
-
 # --- Basic setup
 
 TIMESTAMP = str(datetime.datetime.now())
@@ -69,6 +52,23 @@ if not os.path.exists(LOGFOLDER):
 RESULTFOLDER = BASE_OUTFOLDER + "/" + "results"
 if not os.path.exists(RESULTFOLDER):
     os.makedirs(RESULTFOLDER)
+
+# check if results are already there
+
+if (os.path.exists(RESULTFOLDER + "/lb.pickle") and
+    os.path.exists(RESULTFOLDER + "/folds_train_X.pickle") and
+    os.path.exists(RESULTFOLDER + "/folds_train_Y.pickle") and
+    os.path.exists(RESULTFOLDER + "/folds_test_X.pickle") and
+    os.path.exists(RESULTFOLDER + "/folds_test_Y.pickle") and
+    os.path.exists(RESULTFOLDER + "/features_ngrams_train.pickle") and
+    os.path.exists(RESULTFOLDER + "/features_ngrams_test.pickle") and
+    os.path.exists(RESULTFOLDER + "/features_bom_train.pickle") and
+    os.path.exists(RESULTFOLDER + "/features_bom_test.pickle") and
+    os.path.exists(RESULTFOLDER + "/features_pv_train.pickle") and
+        os.path.exists(RESULTFOLDER + "/features_pv_test.pickle")):
+
+    logger.info("Feature spaces already generated, exiting.")
+    sys.exit()
 
 
 # --- Logger setup
