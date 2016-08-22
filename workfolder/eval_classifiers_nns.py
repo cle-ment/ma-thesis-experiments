@@ -275,8 +275,9 @@ def CV_all_feature_spaces(estimator, estimator_name, parameters,
 # -- Storing results to server in case of interuption
 
 def store_results(computation_progress,
-                  src="/home/ubuntu/thesis-experiments/output/",
-                  trg="clemens@cwestrup.de:thesis/output"):
+                  src=("/home/ubuntu/thesis-experiments/output/" +
+                       EXP_NAME + "/"),
+                  trg="clemens@cwestrup.de:thesis/output/" + EXP_NAME):
     pickle.dump(computation_progress,
                 open(BASE_OUTFOLDER + "/computation_progress.pickle", "wb"))
     if not options.local:
