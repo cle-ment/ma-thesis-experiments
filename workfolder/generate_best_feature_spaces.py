@@ -191,7 +191,7 @@ features_bom_train = []
 features_bom_test = []
 
 model_word2vec = gensim.models.Word2Vec.load_word2vec_format(
-    "/Users/cwestrup/thesis/data/word2vec/GoogleNews-vectors-negative300.bin",
+    "./data/GoogleNews-vectors-negative300.bin.gz",
     binary=True)
 
 

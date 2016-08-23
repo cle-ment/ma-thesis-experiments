@@ -390,13 +390,13 @@ if (computation_progress['classifier'] == 1):
     def nn_model():
         model = keras.models.Sequential()
 
-        model.add(Dense(128, input_dim=FEAT_DIM, init='uniform'))
+        model.add(Dense(512, input_dim=FEAT_DIM, init='uniform'))
         model.add(Activation('tanh'))
         model.add(Dropout(0.3))
-        model.add(Dense(64, init='uniform'))
+        model.add(Dense(256, init='uniform'))
         model.add(Activation('tanh'))
         model.add(Dropout(0.3))
-        model.add(Dense(32, init='uniform'))
+        model.add(Dense(128, init='uniform'))
         model.add(Activation('tanh'))
         model.add(Dropout(0.3))
         model.add(Dense(OUTPUT_DIM, init='uniform'))
@@ -462,7 +462,7 @@ if (computation_progress['classifier'] == 2):
         # max pooling
         model.add(Lambda(max_1d, output_shape=(32,)))
         # We add a vanilla hidden layer:
-        model.add(Dense(64))
+        model.add(Dense(512))
         model.add(Dropout(0.2))
         model.add(Activation('relu'))
         # We project onto a single unit output layer,
