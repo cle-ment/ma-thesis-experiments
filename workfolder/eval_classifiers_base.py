@@ -251,28 +251,9 @@ def CV_all_feature_spaces(estimator, estimator_name, parameters,
             results_df.columns = ['features', 'classifier',
                                   'mcc train', 'mcc test']
             results_df.to_csv(RESULTFOLDER + "/results.csv")
-        except Exception as e:
+        except:
             # e.g. when multinomial nb can only handle positive data
-            logger.warn("# -- " + features_names[i] + ": exception")
-            logger.warn(e)
-            logger.warn("# -- trying scaling data into [0,1])")
-            min_max_scaler = sklearn.preprocessing.MinMaxScaler()
-            X_train_minmax = min_max_scaler.fit_transform(features_train[i])
-            X_test_minmax = min_max_scaler.fit_transform(features_test[i])
-
-            mcc_train, mcc_test = CV(estimator, parameters,
-                                     X_train_minmax, X_test_minmax,
-                                     folds_train_Y, folds_test_Y,
-                                     n_jobs=n_jobs)
-
-            computation_progress['results'].append(
-                [features_names[i], estimator_name, mcc_train, mcc_test]
-            )
-            # store results in DataFrame
-            results_df = pd.DataFrame(computation_progress['results'])
-            results_df.columns = ['features', 'classifier',
-                                  'mcc train', 'mcc test']
-            results_df.to_csv(RESULTFOLDER + "/results.csv")
+            logger.warn("# -- " + features_names[i] + ": Skiping / Exception")
 
         # update status
         computation_progress['features'] = i+1
