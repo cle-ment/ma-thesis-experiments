@@ -196,12 +196,8 @@ def CV(estimator, parameters, X_train, X_test, Y_train, Y_test, n_jobs=CORES):
         print("grid end")
         logger.info("# - Done. Best params: " + str(grid_search.best_params_))
 
-        print("predict train start")
         predictions_train = grid_search.predict(X_train[fold])
-        print("predict train end")
-        print("predict test start")
         predictions_test = grid_search.predict(X_test[fold])
-        print("predict test end")
 
         mcc_train = MCC(predictions_train, Y_train[fold])
         mcc_test = MCC(predictions_test, Y_test[fold])
