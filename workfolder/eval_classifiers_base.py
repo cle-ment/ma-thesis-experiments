@@ -236,7 +236,6 @@ def CV_all_feature_spaces(estimator, estimator_name, parameters,
             continue
 
         try:
-
             logger.info("# -- " + features_names[i])
             mcc_train, mcc_test = CV(estimator, parameters,
                                      features_train[i], features_test[i],
@@ -253,7 +252,7 @@ def CV_all_feature_spaces(estimator, estimator_name, parameters,
             results_df.to_csv(RESULTFOLDER + "/results.csv")
         except:
             # e.g. when multinomial nb can only handle positive data
-            logger.warn("# -- " + features_names[i] + ": Skiping / Exception")
+            logger.warn("# -- " + features_names[i] + ": Skipping / Exception")
 
         # update status
         computation_progress['features'] = i+1
@@ -378,14 +377,14 @@ if (computation_progress['classifier'] == 2):
 
 if (computation_progress['classifier'] == 3):
 
-    logger.info("# --- Multinomial Naive Bayes (multinomial)")
-
-    classifier = sklearn.naive_bayes.MultinomialNB()
-    parameter_space = {
-        'alpha': [0.1, 1, 10, 100, 1000]
-        }
-    CV_all_feature_spaces(classifier, "Multinomial Naive Bayes (multinomial)",
-                          parameter_space, folds_train_Y_cat, folds_test_Y_cat)
+    # logger.info("# --- Multinomial Naive Bayes (multinomial)")
+    #
+    # classifier = sklearn.naive_bayes.MultinomialNB()
+    # parameter_space = {
+    #     'alpha': [0.1, 1, 10, 100, 1000]
+    #     }
+    # CV_all_feature_spaces(classifier, "Multinomial Naive Bayes (multinomial)",
+    #                       parameter_space, folds_train_Y_cat, folds_test_Y_cat)
 
     # update status
     computation_progress['classifier'] = 4
