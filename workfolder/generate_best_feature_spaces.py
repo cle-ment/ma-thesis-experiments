@@ -180,6 +180,8 @@ pickle.dump(features_ngrams_train,
             open(RESULTFOLDER +
                  "/features_ngrams_train.pickle", "wb"))
 
+
+
 logger.info("Done")
 
 
@@ -191,7 +193,7 @@ features_bom_train = []
 features_bom_test = []
 
 model_word2vec = gensim.models.Word2Vec.load_word2vec_format(
-    "./data/GoogleNews-vectors-negative300.bin.gz",
+    "./data/GoogleNews-vectors-negative300.bin",
     binary=True)
 
 
@@ -375,6 +377,7 @@ features_pv_test = []
 # INFER_STEPS = 10
 # INFER_ALPHA = 0.1
 # INFER_MIN_ALPHA = 0.0001
+STEPS = 5
 INFER_STEPS = 2000
 INFER_ALPHA = 0.2
 INFER_MIN_ALPHA = 0.002
@@ -394,7 +397,7 @@ for i in range(0, num_folds):
     # specify model: best from eval_doc2vec results
     model = gensim.models.Doc2Vec(
         window=8, negative=10, min_count=2, hs=1, sample=0, dm=0,
-        workers=CORES, iter=10)
+        workers=CORES, iter=30)
     model.build_vocab(corpus_train)
 
     # train model and take features with highest score
@@ -418,7 +421,7 @@ logger.info("Done")
 logger.info("Syncing results to server")
 
 call(["rsync", "-av", "--update", "--delete", "--force",
-      RESULTFOLDER,
-      "clemens@cwestrup.de:thesis/output/" + EXP_NAME + "/results"])
+      BASE_OUTFOLDER,
+      "clemens@cwestrup.de:thesis/output/"])
 
 logger.info("Done.")

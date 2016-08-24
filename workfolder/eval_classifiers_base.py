@@ -32,17 +32,6 @@ import sklearn.grid_search
 
 import gensim
 
-import keras
-from keras.models import Sequential
-from keras.layers.core import Dense, Activation
-from keras.layers import Dense, Dropout, Activation, Flatten
-from keras.layers import Convolution1D, MaxPooling1D
-from keras.layers import Embedding, Lambda
-from keras.utils.visualize_util import plot
-from keras.optimizers import SGD
-from keras.wrappers import scikit_learn
-from keras import backend as K
-
 # --- Parse Command Line Arguments
 
 parser = OptionParser()

@@ -1,5 +1,7 @@
 #!/bin/bash
 
+# This assumes features spaces already being generated and uploaded to server
+
 # clone repo (replace password)
 git clone https://cle-ment:XXXXXXX@github.com/cle-ment/thesis-experiments /home/ubuntu/thesis-experiments
 
@@ -25,4 +27,4 @@ su --login ubuntu -c "scp -r clemens@cwestrup.de:/home/clemens/thesis/output/ /h
 su --login ubuntu -c "cd /home/ubuntu/thesis-experiments/workfolder; python generate_best_feature_spaces.py"
 
 # run classifiers
-su --login ubuntu -c "cd /home/ubuntu/thesis-experiments/workfolder; THEANO_FLAGS=mode=FAST_RUN,device=gpu,floatX=float32 python eval_classifiers_nns.py"
+su --login ubuntu -c "cd /home/ubuntu/thesis-experiments/workfolder; THEANO_FLAGS=mode=FAST_RUN,device=gpu,floatX=float32 python eval_classifiers_nns.py > eval_classifiers_nns.log 2>&1"

@@ -1,5 +1,7 @@
 #!/bin/bash
 
+# This assumes features spaces already being generated and uploaded to server
+
 # clone repo (replace password)
 git clone https://cle-ment:XXXXXXX@github.com/cle-ment/thesis-experiments /home/ubuntu/thesis-experiments
 
@@ -21,11 +23,5 @@ mv /home/ubuntu/thesis-experiments/workfolder/--.bash_profile /home/ubuntu/.bash
 # copy previous output to continue computation (if available)
 su --login ubuntu -c "scp -r clemens@cwestrup.de:/home/clemens/thesis/output/ /home/ubuntu/thesis-experiments/"
 
-# download Google News vectors
-su --login ubuntu -c "wget --no-check-certificate https://googledrive.com/host/0B7XkCwpI5KDYNlNUTTlSS21pQmM -O /home/ubuntu/thesis-experiments/workfolder/data/GoogleNews-vectors-negative300.bin.gz"
-
-# generate feature spaces (will skip if they already exist)
-su --login ubuntu -c "cd /home/ubuntu/thesis-experiments/workfolder; python generate_best_feature_spaces.py"
-
 # run classifiers
-su --login ubuntu -c "cd /home/ubuntu/thesis-experiments/workfolder; python eval_classifiers_base.py"
+su --login ubuntu -c "cd /home/ubuntu/thesis-experiments/workfolder; python eval_classifiers_base.py > eval_classifiers_base.log 2>&1"
