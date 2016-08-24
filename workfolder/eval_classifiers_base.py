@@ -251,7 +251,7 @@ def CV_all_feature_spaces(estimator, estimator_name, parameters,
             results_df.columns = ['features', 'classifier',
                                   'mcc train', 'mcc test']
             results_df.to_csv(RESULTFOLDER + "/results.csv")
-         except Exception as e:
+        except Exception as e:
             # e.g. when multinomial nb can only handle positive data
             logger.warn("# -- " + features_names[i] + ": exception")
             logger.warn(e)
