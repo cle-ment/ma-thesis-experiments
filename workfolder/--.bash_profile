@@ -11,4 +11,4 @@
 # export CPATH="/home/ubuntu/cudnn-install/include:$CPATH"
 # export LIBRARY_PATH="/home/ubuntu/cudnn-install/lib64:$LIBRARY_PATH"
 
-source /home/ubuntu/.bash_rc
+source /home/ubuntu/.bashrc
