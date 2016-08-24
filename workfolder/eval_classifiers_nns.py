@@ -150,7 +150,10 @@ class DenseTransformer(sklearn.base.BaseEstimator,
         return self
 
     def transform(self, X):
-        return X.toarray()
+        try :
+            return X.toarray()
+        except:
+            return X  # already dense (hopefully)
 
 # -- Evaluation
 

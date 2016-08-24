@@ -23,8 +23,5 @@ mv /home/ubuntu/thesis-experiments/workfolder/--.bash_profile /home/ubuntu/.bash
 # copy previous output to continue computation (if available)
 su --login ubuntu -c "scp -r clemens@cwestrup.de:/home/clemens/thesis/output/ /home/ubuntu/thesis-experiments/"
 
-# generate feature spaces (will skip if they already exist)
-su --login ubuntu -c "cd /home/ubuntu/thesis-experiments/workfolder; python generate_best_feature_spaces.py"
-
 # run classifiers
-su --login ubuntu -c "cd /home/ubuntu/thesis-experiments/workfolder; THEANO_FLAGS=mode=FAST_RUN,device=gpu,floatX=float32 python eval_classifiers_nns.py > eval_classifiers_nns.log 2>&1"
+su --login ubuntu -c "cd /home/ubuntu/thesis-experiments/workfolder; python eval_classifiers_nns.py > eval_classifiers_nns.log 2>&1"
