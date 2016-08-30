@@ -8,6 +8,7 @@ import os
 import logging
 import pickle
 from shutil import copyfile
+from optparse import OptionParser
 
 import numpy as np
 import pandas as pd
@@ -25,12 +26,20 @@ from keras.callbacks import ModelCheckpoint
 # SETTINGS
 # -----------------------
 
+# --- Parse Command Line Arguments
+
+parser = OptionParser()
+parser.add_option("-v", "--verbose", dest="verbose",  action="store_true",
+                  default=False, help="Show debug output.")
+
+(options, args) = parser.parse_args()
+
 # Network Architecture
-ITERATIONS = 60  # 60
-HIDDEN_DIM = 100  # 512
+ITERATIONS = 10  # 60
+HIDDEN_DIM = 10  # 512
 DATA_LIMIT = 100  # None
 VALIDATION_SET_SIZE = 0.1
-SAMPLING_LENGTH = 400
+SAMPLING_LENGTH = 50
 
 # Window size and redundancy
 WIN_LEN = 40
@@ -44,6 +53,7 @@ LABELS = ["other",
           "job",
           "benefits",
           "company"]
+num_labels = len(LABELS)
 
 # use "a" as in applicant since c is already taken
 LABELS_SHORT = ["o", "a", "n", "j", "b", "c"]
@@ -80,7 +90,10 @@ LAST_WEIGHTS_FILE = CHECKPOINTFOLDER + "/model_weights_last.hdf5"
 
 # create logger
 logger = logging.getLogger(EXP_NAME)
-logger.setLevel(logging.DEBUG)
+if options.verbose:
+    logger.setLevel(logging.DEBUG)
+else:
+    logger.setLevel(logging.INFO)
 
 # create console handler and set level to debug
 ch = logging.StreamHandler()
@@ -115,6 +128,30 @@ class color:
     BOLD = '\033[1m'
     UNDERLINE = '\033[4m'
     END = '\033[0m'
+    BLUE0 = '\033[48;5;16m'
+    BLUE1 = '\033[48;5;17m'
+    BLUE2 = '\033[48;5;18m'
+    BLUE3 = '\033[48;5;19m'
+    BLUE4 = '\033[48;5;20m'
+    BLUE5 = '\033[48;5;21m'
+
+
+def get_confidence_color(confidence):
+    # stretch confidence from [0.5, 1] interval to [0,1] interval
+    confidence = (confidence - 0.5) * 2
+    # get color
+    if (np.floor(confidence)) * 6 < 1:
+        return color.BLUE0
+    if (np.floor(confidence)) * 6 < 2:
+        return color.BLUE1
+    if (np.floor(confidence)) * 6 < 3:
+        return color.BLUE2
+    if (np.floor(confidence)) * 6 < 4:
+        return color.BLUE3
+    if (np.floor(confidence)) * 6 < 5:
+        return color.BLUE4
+    if (np.floor(confidence)) * 6 < 6:
+        return color.BLUE5
 
 
 # -----------------------
@@ -179,6 +216,11 @@ def MCC_vector(x, y):
     return (cov(x, y, False) / np.sqrt(cov(x, x, False) * cov(y, y, False)))
 
 
+def prob2conf(probability):
+    """ Convert probabilities into confidence statements
+    """
+    return (probability - (1/LABELS)) * LABELS
+
 # -----------------------
 # DATASET PREPARATION
 # -----------------------
@@ -202,8 +244,9 @@ for sentence in data_X:
 # Assign indices to labels and characters (labels first so they have the
 # same indices as in 'labels2indices' e.g. above)
 chars = set(all_text)
-logger.info('Total labels: ' + str(len(LABELS)))
-logger.info('Total chars: ' + str(len(chars)))
+num_chars = len(chars)
+logger.info('Total labels: ' + str(num_labels))
+logger.info('Total chars: ' + str(num_chars))
 
 # --- Indexing labels and characters (2 way encoding)
 
@@ -221,8 +264,8 @@ indices2short_labels = dict((i, c) for i, c in enumerate(LABELS_SHORT))
 
 # index chars for Y (start indexing after the highest label index
 # so labels and chars can be encoded in the same target vector
-charsY2indices = dict((c, i + len(LABELS)) for i, c in enumerate(chars))
-indices2charsY = dict((i + len(LABELS), c) for i, c in enumerate(chars))
+charsY2indices = dict((c, i + num_labels) for i, c in enumerate(chars))
+indices2charsY = dict((i + num_labels, c) for i, c in enumerate(chars))
 
 logger.debug("X char endoding: " + str(indices2charsX))
 logger.debug("Y label endoding: " + str(indices2labels))
@@ -259,7 +302,7 @@ def sentence2sequences(sentence, label=None, step_size=WIN_STEP_SIZE):
             next_chars.append(sentence[i + WIN_LEN])
             next_labels.append(indices2short_labels[labels2indices[label]])
             # log first set only for debugging
-            if (sentence == data_X[0]):
+            if (sentence == data_X[0] and options.verbose):
                 logger.debug(sequence_x + color.BOLD +
                              next_chars[len(next_chars) - 1:][0] + " " +
                              next_labels[len(next_labels) - 1:][0] + " [" +
@@ -281,13 +324,14 @@ logger.info("Generated " + str(len(sequences_X)) + " text sequences.")
 
 logger.info("Vectorizing sequences into X and Y data...")
 
+
 def vectorize_sequences(sequences, next_chars=None, next_labels=None):
-    # X has dimensionality (num of sequences) x WIN_LEN x (num of chars)
-    X = np.zeros((len(sequences), WIN_LEN, len(chars)), dtype=np.bool)
+    # X has dimensions: (num of sequences) x WIN_LEN x (num of chars)
+    X = np.zeros((len(sequences), WIN_LEN, num_chars), dtype=np.bool)
     # Y is used to predict labels and characters simultaneously
-    # so it has dimensionality (num of sequences) x (num of chars + num of labels)
+    # so it has dimensions: (num of sequences) x (num of chars + num of labels)
     if next_chars is not None and next_labels is not None:
-        Y = np.zeros((len(sequences), len(chars) + len(LABELS)), dtype=np.bool)
+        Y = np.zeros((len(sequences), num_chars + num_labels), dtype=np.bool)
     else:
         Y = None
 
@@ -296,7 +340,8 @@ def vectorize_sequences(sequences, next_chars=None, next_labels=None):
             try:
                 X[s, c, charsX2indices[char]] = 1
             except:
-                print(sequence)
+                logger.error("Can't vectorize sequence: " + sequence)
+                sys.exit()
             if next_chars is not None and next_labels is not None:
                 Y[s, charsY2indices[next_chars[s]]] = 1
                 Y[s, short_labels2indices[next_labels[s]]] = 1
@@ -307,10 +352,10 @@ X, Y = vectorize_sequences(sequences_X, next_X, next_Y)
 
 logger.info("Vectorized sequences.")
 logger.info("X has dimensions " + str(len(sequences_X)) +
-            " x " + str(WIN_LEN) + " x " + str(len(chars)) +
+            " x " + str(WIN_LEN) + " x " + str(num_chars) +
             " (#sequences x window length x #chars)")
 logger.info("Y has dimensions " + str(len(sequences_X)) +
-            " x " + str(len(chars) + len(LABELS)) +
+            " x " + str(num_chars + num_labels) +
             " (#sequences x #chars + #labels)]")
 
 logger.info("Generating training and validation sets ...")
@@ -341,11 +386,11 @@ except OSError:
     # build the model: 2 stacked LSTM RNNs
     model = Sequential()
     model.add(LSTM(HIDDEN_DIM, return_sequences=True,
-                   input_shape=(WIN_LEN, len(chars))))
+                   input_shape=(WIN_LEN, num_chars)))
     model.add(Dropout(0.2))
     model.add(LSTM(HIDDEN_DIM, return_sequences=False))
     model.add(Dropout(0.2))
-    model.add(Dense(len(chars) + len(LABELS)))
+    model.add(Dense(num_chars + num_labels))
     model.add(Activation('softmax'))
     # save model
     logger.info("Compiling model.")
@@ -364,10 +409,13 @@ def sample_from_output(out_prob_vector, temperature=1.0):
     out_prob_vector = np.log(out_prob_vector) / temperature
     out_prob_vector = np.exp(out_prob_vector) / np.sum(np.exp(out_prob_vector))
     label_index = np.argmax(np.random.multinomial(
-        1, out_prob_vector[:len(LABELS)], 1))
+        1, out_prob_vector[:num_labels], 1))
+    label_confidence = out_prob_vector[label_index]
     char_index = np.argmax(np.random.multinomial(
-        1, out_prob_vector[len(LABELS):], 1)) + len(LABELS)
-    return label_index, char_index
+        1, out_prob_vector[num_labels:], 1)) + num_labels
+    char_confidence = out_prob_vector[char_index]
+
+    return label_index, label_confidence, char_index, char_confidence
 
 
 def max_from_output(out_prob_vector):
@@ -376,29 +424,47 @@ def max_from_output(out_prob_vector):
     output by the LSTM at prediction time by taking the ones with
     the highest probability
     '''
-    label_index = np.argmax(out_prob_vector[:len(LABELS)])
-    char_index = np.argmax(out_prob_vector[len(LABELS):]) + len(LABELS)
-    return label_index, char_index
+    label_index = np.argmax(out_prob_vector[:num_labels])
+    label_confidence = out_prob_vector[label_index]
+    char_index = np.argmax(out_prob_vector[num_labels:]) + num_labels
+    char_confidence = out_prob_vector[char_index]
+
+    return label_index, label_confidence, char_index, char_confidence
 
 
-def LSTM_predict_sentence(model, sentence):
+def LSTM_predict_sentence(model, sentence, debug=False,
+                          step_size=WIN_STEP_SIZE):
     '''
     Predict the label of a sentence. Generates sequences from the sentence and
     predicts the label using majority vote over the predictions.
     '''
-    sequences, _, _ = sentence2sequences(sentence)
+    sequences, _, _ = sentence2sequences(sentence, step_size=step_size)
     X, _ = vectorize_sequences(sequences)
     predictions = []
+    confidences = []
     for x in X:
         x = np.reshape(x, (1, x.shape[0], x.shape[1]))
         # predict probabilities of labels and characters with the LSTM
         out_prob_vector = model.predict(x, verbose=0)[0]
         # get max values from probabilities for label and char
-        label_index, _ = max_from_output(out_prob_vector)
+        (label_index,
+         label_confidence, _, _) = sample_from_output(out_prob_vector)
         predictions.append(label_index)
+        confidences.append(label_confidence)
+    if debug:
+        filler = " " * int(step_size - 1)
+        confidence_colored_labels = ""
+        for p, prediction in enumerate(predictions):
+            confidence_color = get_confidence_color(confidences[p])
+            confidence_colored_labels += color.BLUE0 + filler + color.END
+            confidence_colored_labels += confidence_color
+            confidence_colored_labels += str(indices2short_labels[prediction])
+            confidence_colored_labels += color.END
+        logger.debug(sentence)
+        logger.debug(confidence_colored_labels)
     # if no predictions where made take random label
     if not predictions:
-        label_index = np.random.randint(0, len(LABELS))
+        label_index = np.random.randint(0, num_labels)
         confidence = 0
     else:
         # take mode (= majority vote for most occuring label)
@@ -413,7 +479,7 @@ def LSTM_predict_sentences(model, sentences):
     Predict a batch of sentences and return an indicator matrix
     '''
     # predictions in the format samples x classes
-    pred_ind_matrix = np.zeros((len(sentences), len(LABELS)), dtype=np.bool)
+    pred_ind_matrix = np.zeros((len(sentences), num_labels), dtype=np.bool)
     confidences = []
     for s, sentence in enumerate(sentences):
         label_index, confidence = LSTM_predict_sentence(model, str(sentence))
@@ -446,65 +512,55 @@ for iteration in range(1, ITERATIONS):
     # score validation set sentences
     pred_ind_matrix, confidences = LSTM_predict_sentences(
         model, data_X[len(data_X) - val_size:])
-    mcc_validation = MCC(pred_ind_matrix, Y[:, :len(LABELS)])
+    mcc_validation = MCC(pred_ind_matrix, Y[:, :num_labels])
 
     logger.info("MCC: " + "{:0.3f}".format(mcc_validation) +
                 ", mean confidence: " + "{:0.3f}".format(np.mean(confidences)))
 
-    print(pred_ind_matrix.shape)
-    print(Y[:, :len(LABELS)].shape)
+    if options.verbose:
+        sentence = data_X[np.random.randint(0, len(data_X))]
+        logger.debug("[1] Labeling random sentence: ")
+        label_index, confidence = LSTM_predict_sentence(
+            model, str(sentence), debug=True)
+        logger.debug("Label: '" + str(indices2labels[label_index]) + "', "
+                     "Confidence: " + str(confidence))
 
-    # for debugging sample predictions from the model
+        logger.debug("[2] Constructing a sentence: ")
 
-    # start_index = random.randint(0, len(all_text) - maxlen - 1)
-    #
-    # print('----- classifying text')
-    # print()
-    #
-    # for diversity in [1.0]:
-    #
-    #     print()
-    #     print('----- diversity:', diversity)
-    #
-    #     rnn_current_chars  = all_text[start_index: start_index + maxlen]
-    #     rnn_current_labels = all_labels[start_index: start_index + maxlen]
-    #
-    #     chars_true  = all_text[start_index: start_index + maxlen
-    #                                          + SAMPLING_LENGTH]
-    #     labels_true = all_labels[start_index: start_index + maxlen
-    #                                           + SAMPLING_LENGTH]
-    #
-    #     generated_labels = ''
-    #     generated_labels += rnn_current_labels
-    #
-    #     print('----- Generating with seed: "' + rnn_current_chars + '"')
-    #
-    #     for i in range(SAMPLING_LENGTH):
-    #         x = np.zeros((1, maxlen, len(chars)))
-    #         for t, char in enumerate(rnn_current_chars):
-    #             x[0, t, char_indices[char]] = 1.
-    #
-    #         preds = model.predict(x, verbose=0)[0]
-    #
-    #         next_label = sample_label(preds, diversity)
-    #
-    #         generated_labels += str(next_label)
-    #
-    #         rnn_current_chars  = chars_true[maxlen + i:i + 2*maxlen]
-    #         rnn_current_labels = rnn_current_labels[1:] + str(next_label)
-    #
-    #     # print generated chars and labels with true labels
-    #     print_pred(generated_labels, chars_true, labels_true, 70)
-    #
-    #     # calculate and print accuracy
-    #     accuracy = label_accuracy(generated_labels, labels_true)
-    #     print("Label Accuracy on sampled text:", accuracy)
-    #
-    #     # calculate MCC on validation data:
-    #     y_all_true = []
-    #     y_all_pred = []
-    #     for i, y_true in enumerate(y_test):
-    #         y_pred = model.predict(X_test[i:i+1], verbose=0)[0]
-    #         y_all_pred.append(y_pred)
-    #         y_all_true.append(y_true)
-    #     print("MCC:", MCC(np.vstack(y_all_true), np.vstack(y_all_pred)))
+        for diversity in [0.5, 1.0, 2]:
+
+            logger.debug("Seed: Start of sentence above. " +
+                         "Diversity: " + str(diversity))
+
+            # placeholder for generated sentence and labels
+            gen_sentence = ""
+            gen_labels = ""
+
+            # build seed sequence
+            sequences, _, _ = sentence2sequences(sentence)
+            X, _ = vectorize_sequences(sequences)
+            x = np.reshape(X[0], (1, X[0].shape[0], X[0].shape[1]))
+
+            for i in range(SAMPLING_LENGTH):
+
+                preds = model.predict(x, verbose=0)[0]
+
+                (next_label_index_Y_encoded,
+                 _,
+                 next_char_index_Y_encoded,
+                 _) = sample_from_output(preds, diversity)
+
+                gen_sentence += indices2charsY[next_char_index_Y_encoded]
+                gen_labels += indices2short_labels[next_label_index_Y_encoded]
+
+                # kick out first character
+                x = x[:, 1:, :]
+                # attach a new space for a character
+                x = np.hstack([x, np.zeros((1, 1, num_chars))])
+                # add the newly generated character
+                next_char_index_X_encoded = (
+                    int(next_char_index_Y_encoded) - num_labels)
+                x[0, len(x), next_char_index_X_encoded] = 1
+
+            logger.debug(gen_sentence)
+            logger.debug(color.BLUE0 + gen_labels + color.END)
