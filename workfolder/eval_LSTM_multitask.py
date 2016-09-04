@@ -9,6 +9,7 @@ import logging
 import pickle
 from shutil import copyfile
 from optparse import OptionParser
+from copy import deepcopy
 
 import numpy as np
 import pandas as pd
@@ -37,10 +38,12 @@ parser.add_option("-s", "--sync", dest="sync",  action="store_true",
 (options, args) = parser.parse_args()
 
 # Network Architecture
-ITERATIONS = 10  # 60
-HIDDEN_DIM = 10  # 512
-DATA_LIMIT = 100  # None
-VALIDATION_SET_SIZE = 0.1
+ITERATIONS = 20  # 60
+HIDDEN_DIM = 100  # 512
+DATA_LIMIT_TRAIN = 100  # None, limit the number of used test data
+DATA_LIMIT_TEST = 200  # None, limit the number of used test data
+FOLD_LIMIT = 1  # None, limit the number of processed folds
+VALIDATION_SET_SIZE = 0.05
 SAMPLING_LENGTH = 50
 
 # Window size and redundancy
@@ -109,7 +112,7 @@ CHECKPOINTFOLDER = RESULTFOLDER + "/" + "model-checkpoints"
 if not os.path.exists(CHECKPOINTFOLDER):
     os.makedirs(CHECKPOINTFOLDER)
 
-LAST_WEIGHTS_FILE = CHECKPOINTFOLDER + "/model_weights_last.hdf5"
+INPUTFOLDER = "../output/generate_best_feature_spaces/results/"
 
 
 # -- Logging
@@ -129,7 +132,7 @@ fh = logging.FileHandler(LOGFOLDER + '/logger.log')
 fh.setLevel(logging.INFO)
 
 # create formatter
-formatter = logging.Formatter('%(asctime)s | %(message)s')
+formatter = logging.Formatter('%(asctime)s %(levelname)s | %(message)s')
 
 # add formatter to ch
 ch.setFormatter(formatter)
@@ -234,7 +237,7 @@ def MCC_vector(x, y):
 
 # -- misc utility functions
 
-def get_confidence_color(confidence):
+def get_confidence_color(confidence, num_classes=num_labels):
     """ Generate a color given confidence of the classifier
 
     Args:
@@ -243,24 +246,22 @@ def get_confidence_color(confidence):
     Returns:
         Color given the confidence. Brighter blues for higher confidence.
     """
-    # stretch confidence from [0.5, 1] interval to [0,1] interval
-    confidence = (confidence - 0.5) * 2
     # get color
-    if (np.floor(confidence)) * 6 < 1:
-        return color.BLUE0
-    if (np.floor(confidence)) * 6 < 2:
+    if (np.floor(confidence)) * num_classes < 2:
         return color.BLUE1
-    if (np.floor(confidence)) * 6 < 3:
+    if (np.floor(confidence)) * num_classes < 3:
         return color.BLUE2
-    if (np.floor(confidence)) * 6 < 4:
+    if (np.floor(confidence)) * num_classes < 4:
         return color.BLUE3
-    if (np.floor(confidence)) * 6 < 5:
+    if (np.floor(confidence)) * num_classes < 5:
         return color.BLUE4
-    if (np.floor(confidence)) * 6 < 6:
+    if (np.floor(confidence)) * num_classes < 6:
         return color.BLUE5
+    else:
+        return color.BLUE0
 
 
-def prob2conf(probability, num_classes = num_labels):
+def prob2conf(probability, num_classes=num_labels):
     """ Convert probabilities into confidence statements.
         Depends on the number of classes.
         of classes / labels.
@@ -294,14 +295,17 @@ def store_results(
 
 # --- DATASET PROCESSING
 
-def sentence2sequences(sentence, label=None, step_size=WIN_STEP_SIZE):
+def sentence2sequences(sentence, label=None,
+                       step_size=WIN_STEP_SIZE, debug=False):
     """ Function to generate sequences from a sentence,
         including the next char and label for prediction for each sequence.
 
     Args:
         sentence: A sentence to be converted into sequences.
         label: The class label for the sentence (only given for training data).
+            Should be in the form of LABELS constant defined above.
         step_size: The step_size of the window for producing sequences.
+        debug: Print sequences
 
     Returns:
         sequences: A list of sequences produced from the sentence
@@ -331,7 +335,7 @@ def sentence2sequences(sentence, label=None, step_size=WIN_STEP_SIZE):
             next_chars.append(sentence[i + WIN_LEN])
             next_labels.append(indices2short_labels[labels2indices[label]])
             # log first set only for debugging
-            if (sentence == data_X[0] and options.verbose):
+            if debug:
                 logger.debug(sequence_x + color.BOLD +
                              next_chars[len(next_chars) - 1:][0] + " " +
                              next_labels[len(next_labels) - 1:][0] + " [" +
@@ -400,7 +404,9 @@ def sample_from_output(out_prob_vector, temperature=1.0):
     label_confidence = prob2conf(out_prob_vector[label_index])
     char_index = np.argmax(np.random.multinomial(
         1, out_prob_vector[num_labels:], 1)) + num_labels
-    char_confidence = prob2conf(out_prob_vector[char_index])
+    char_confidence = out_prob_vector[char_index]
+    if char_confidence > 1:
+        logger.error("Char confidence over 1: " + char_confidence)
 
     return label_index, label_confidence, char_index, char_confidence
 
@@ -408,7 +414,8 @@ def sample_from_output(out_prob_vector, temperature=1.0):
 def LSTM_predict_sentence(model, sentence, debug=False,
                           step_size=WIN_STEP_SIZE):
     """ Predict the label of a sentence. Generates sequences from the
-        sentence and predicts the label using majority vote over the predictions.
+        sentence and predicts the label using majority vote over the
+        predictions.
 
     Args:
         model: LSTM model used for prediction
@@ -453,11 +460,11 @@ def LSTM_predict_sentence(model, sentence, debug=False,
 
 
 def LSTM_predict_sentences(model, sentences):
-    """ Predict a batch of sentences and return an indicator matrix
+    """ Predict a set of sentences and return an indicator matrix
 
     Args:
         model: LSTM model to use for prediction.
-        sentences: Sentence to predict upon.
+        sentences: Sentences to predict upon.
 
     Returns:
         pred_ind_matrix: Indicator matrix of predictions (samples x classes)
@@ -473,56 +480,94 @@ def LSTM_predict_sentences(model, sentences):
     return pred_ind_matrix, confidences
 
 
-# TODO: Train in folds (same folds as other exp) and use training data
-#       that's seperate from validation data
-
 # ------------------------------------------------------------------------------
-# PREPERATION, TRAINING AND VALIDATION OF MODEL
+# PREPERATION, TRAINING AND TESTING OF MODEL
 # ------------------------------------------------------------------------------
 
-# init with current computation progress
+# -- Init with current computation progress
 
 try:
     computation_progress = pickle.load(
         open(BASE_OUTFOLDER + "/computation_progress.pickle", "rb"))
 except:
     # no computation was done yet so create a progress file_prefix
-    computation_progress = {'fold': 0,
-                            'iteration': 0,
-                            'results': [],
-                            'current_folds_train': [],
-                            'current_folds_test': [],
-                            }
+    computation_progress = {
+        'fold': 0,
+        'iteration': 0,
+        'results': [],
+        'current_folds_train': [],
+        'current_folds_test': []
+    }
     store_results(computation_progress)
 
 
 # --- DATASET PREPARATION
 
-# read and assign data
-df_conf = pickle.load(open("data/sentences-dataframe-" +
-                           "confidence_greater-0.6.pickle", "rb"))
-data_X = np.array(df_conf['0-sentence'])
-data_Y = np.array(df_conf['0_label'])
+# -- Load data
 
-# if DATA_LIMIT is given trim input amount
-if DATA_LIMIT is not None:
-    data_X = data_X[:(min(len(data_X), DATA_LIMIT))]
-    data_Y = data_Y[:(min(len(data_Y), DATA_LIMIT))]
+input_folds_train_X = pickle.load(
+    open(INPUTFOLDER + "/folds_train_X.pickle", "rb"))
+input_folds_train_Y = pickle.load(
+    open(INPUTFOLDER + "/folds_train_Y.pickle", "rb"))
+input_folds_test_X = pickle.load(open(
+    INPUTFOLDER + "/folds_test_X.pickle", "rb"))
+input_folds_test_Y = pickle.load(open(
+    INPUTFOLDER + "/folds_test_Y.pickle", "rb"))
+
+# Load label binarizer
+lb = pickle.load(open(INPUTFOLDER + "/lb.pickle", "rb"))
+
+# -- Trim data (if limits are given)
+
+# if FOLD_LIMIT is given limit the number of folds used
+given_num_folds = len(input_folds_train_X)
+num_folds = given_num_folds
+if FOLD_LIMIT is not None:
+    num_folds = min(FOLD_LIMIT, given_num_folds)
+    input_folds_train_X = input_folds_train_X[:num_folds]
+    input_folds_test_X = input_folds_test_X[:num_folds]
+    input_folds_train_Y = input_folds_train_Y[:num_folds]
+    input_folds_test_Y = input_folds_test_Y[:num_folds]
+    logger.debug("Using " + str(num_folds) + " of " + str(given_num_folds) +
+                 " total folds (limit imposed by setting FOLD_LIMIT)")
+
+# if DATA_LIMIT is given only use one fold and trim input amount
+if DATA_LIMIT_TRAIN is not None:
+    logger.debug("Training data limited to " + str(DATA_LIMIT_TRAIN) +
+                 " (limit imposed by setting DATA_LIMIT_TRAIN)")
+    for fold in range(0, num_folds):
+        input_folds_train_X[fold] = input_folds_train_X[fold][
+            :(min(len(input_folds_train_X[fold]), DATA_LIMIT_TRAIN))]
+        input_folds_train_Y[fold] = input_folds_train_Y[fold][
+            :(min(len(input_folds_train_Y[fold]), DATA_LIMIT_TRAIN))]
+if DATA_LIMIT_TEST is not None:
+    logger.debug("Test data limited to " + str(DATA_LIMIT_TEST) +
+                 " (limit imposed by setting DATA_LIMIT_TEST)")
+    for fold in range(0, num_folds):
+        input_folds_test_X[fold] = input_folds_test_X[fold][
+            :(min(len(input_folds_test_X[fold]), DATA_LIMIT_TEST))]
+        input_folds_test_Y[fold] = input_folds_test_Y[fold][
+            :(min(len(input_folds_test_Y[fold]), DATA_LIMIT_TEST))]
+
+# -- process chars
 
 # find all used characters in dataset
+all_folds_X = deepcopy(input_folds_train_X)
+all_folds_X.extend(input_folds_test_X)
 all_text = PADDING_TOKEN
-for sentence in data_X:
-    all_text += sentence
+for fold_X in all_folds_X:
+    for sentence in fold_X:
+        all_text += sentence
+del all_folds_X
 
-# Assign indices to labels and characters (labels first so they have the
-# same indices as in 'labels2indices' e.g. above)
+# count chars and labels
 chars = set(all_text)
 num_chars = len(chars)
 logger.info('Total labels: ' + str(num_labels))
 logger.info('Total chars: ' + str(num_chars))
 
 
-# -- Indexing labels and characters (2 way encoding)
+# -- Index labels and characters (2 way encoding)
 
 # index chars for X
 charsX2indices = dict((c, i) for i, c in enumerate(chars))
@@ -551,148 +596,239 @@ logger.debug("Y char endoding: " + str(indices2charsY))
 # produce padded sequences and next char and label for each sentence
 logger.info("Generating text sequences...")
 
-sequences_X = []
-next_X = []
-next_Y = []
-for sentence, label in zip(data_X, data_Y):
-    sequences, next_chars, next_labels = sentence2sequences(sentence, label)
-    sequences_X.extend(sequences)
-    next_X.extend(next_chars)
-    next_Y.extend(next_labels)
+# print first sentence for debugging
+if options.verbose:
+    logger.debug("Sequencing example (first sentence):")
+    logger.debug(input_folds_train_X[0][0])
 
-logger.info("Generated " + str(len(sequences_X)) + " text sequences.")
 
-logger.info("Vectorizing sequences into X and Y data...")
+def folds2sequences(input_folds_X, input_folds_Y, debug=False):
 
+    is_first_sentence = debug
+    num_seq = 0
+    folds_sequences = []
+    folds_next_chars = []
+    folds_next_labels = []
+
+    for fold_X, fold_Y in zip(input_folds_train_X, input_folds_train_Y):
+
+        fold_sequences = []
+        fold_next_chars = []
+        fold_next_labels = []
+
+        # reverse transform Y to get label names back
+        fold_Y = lb.inverse_transform(fold_Y)
+
+        # create sequences and Y data (next_chars and next_labels) foreach fold
+        for sentence, label in zip(fold_X, fold_Y):
+            sequences, next_chars, next_labels = sentence2sequences(
+                sentence, label, debug=is_first_sentence)
+            fold_sequences.extend(sequences)
+            fold_next_chars.extend(next_chars)
+            fold_next_labels.extend(next_labels)
+            num_seq += len(sequences)
+            is_first_sentence = False
+
+        folds_sequences.append(fold_sequences)
+        folds_next_chars.append(fold_next_chars)
+        folds_next_labels.append(fold_next_labels)
+
+    return folds_sequences, folds_next_chars, folds_next_labels, num_seq
+
+num_sequences = 0
+
+# training folds sequences
+(folds_sequences_train, folds_next_chars_train,
+ folds_next_labels_train, num_seq) = folds2sequences(input_folds_train_X,
+                                                     input_folds_train_Y,
+                                                     debug=options.verbose)
+num_sequences += num_seq
+
+# test folds sequences
+(folds_sequences_test, folds_next_chars_test,
+ folds_next_labels_test, num_seq) = folds2sequences(input_folds_test_X,
+                                                    input_folds_test_Y)
+num_sequences += num_seq
+
+logger.info("Generated " + str(num_sequences) + " text sequences in total.")
 
 # -- Vectorize sequences
 
-X, Y = vectorize_sequences(sequences_X, next_X, next_Y)
+logger.info("Vectorizing sequences...")
+
+data_folds_train_X = []
+data_folds_test_X = []
+data_folds_train_Y = []
+data_folds_test_Y = []
+
+# training data
+for fold in range(0, num_folds):
+    X, Y = vectorize_sequences(folds_sequences_train[fold],
+                               folds_next_chars_train[fold],
+                               folds_next_labels_train[fold])
+    data_folds_train_X.append(X)
+    data_folds_train_Y.append(Y)
+
+# test data
+for fold in range(0, num_folds):
+    X, Y = vectorize_sequences(folds_sequences_test[fold],
+                               folds_next_chars_test[fold],
+                               folds_next_labels_test[fold])
+    data_folds_test_X.append(X)
+    data_folds_test_Y.append(Y)
+
 
 logger.info("Vectorized sequences.")
-logger.info("X has dimensions " + str(len(sequences_X)) +
-            " x " + str(WIN_LEN) + " x " + str(num_chars) +
-            " (#sequences x window length x #chars)")
-logger.info("Y has dimensions " + str(len(sequences_X)) +
-            " x " + str(num_chars + num_labels) +
-            " (#sequences x #chars + #labels)]")
-
-logger.info("Generating training and validation sets ...")
-# generate training and validation set
-val_size = int(np.floor(len(X) * VALIDATION_SET_SIZE))
-X_train = X[:len(X) - val_size]
-Y_train = Y[:len(Y) - val_size]
-X_validation = X[len(X) - val_size:]
-Y_validation = Y[len(Y) - val_size:]
-logger.info("Training set size: " + str(len(X_train)) + " (" +
-            str(100 - VALIDATION_SET_SIZE * 100) + "%)")
-logger.info("Validation set size: " + str(len(X_validation)) + " (" +
-            str(VALIDATION_SET_SIZE * 100) + "%)")
+logger.debug("X dimensions: #sequences x window length x #chars")
+logger.debug("Fold 1, train: " + str(len(data_folds_train_X[0])) +
+             " x " + str(WIN_LEN) + " x " + str(num_chars))
+logger.debug("Fold 1, test:  " + str(len(data_folds_test_X[0])) +
+             " x " + str(WIN_LEN) + " x " + str(num_chars))
+logger.debug("Y dimensions: #sequences x #chars + #labels")
+logger.debug("Fold 1, train: " + str(len(data_folds_train_Y[0])) +
+             " x " + str(num_chars + num_labels))
+logger.debug("Fold 1, test:  " + str(len(data_folds_test_Y[0])) +
+             " x " + str(num_chars + num_labels))
 
 
-# --- MODEL SETUP
+# --- TRAINING, VALIDATION AND TESTING
 
-logger.info("Initializing LSTM model")
+# train and test a model on each fold
+for fold in range(0, num_folds):
 
-# check if previous model exist and load it, otherwise initialize new model
-try:
-    logger.info("Previous model found and loaded.")
-    model = load_model(RESULTFOLDER + "/trained_model.hdf5")
-except OSError:
-    logger.info("No previous weights found, random initialization.")
-    # build the model: 2 stacked LSTM RNNs
-    model = Sequential()
-    model.add(LSTM(HIDDEN_DIM, return_sequences=True,
-                   input_shape=(WIN_LEN, num_chars)))
-    model.add(Dropout(0.2))
-    model.add(LSTM(HIDDEN_DIM, return_sequences=False))
-    model.add(Dropout(0.2))
-    model.add(Dense(num_chars + num_labels))
-    model.add(Activation('softmax'))
-    # save model
-    logger.info("Compiling model.")
-    model.compile(loss='categorical_crossentropy', optimizer='rmsprop')
-    # model.compile(loss=MCC_vector, optimizer='rmsprop')
-    logger.info("Compiled. Saving model as " +
-                RESULTFOLDER + "/trained_model.hdf5")
-    model.save(RESULTFOLDER + "/trained_model.hdf5")
+    # skip fold if it's already computed
+    if computation_progress['fold'] > fold:
+        continue
 
+    logger.info('### Fold ' + str(fold + 1) + "/" + str(num_folds))
 
-# --- TRAINING AND VALIDATION
+    # -- Model Setup
 
-# train the model, output generated text after each iteration
-for iteration in range(1, ITERATIONS):
-    logger.info('## Iteration ' + str(iteration) + "/" + str(ITERATIONS))
+    logger.info("Initializing LSTM model")
 
-# TODO: record which fold for checkpoints when implementing CV
-    checkpointer = ModelCheckpoint(
-        filepath=(CHECKPOINTFOLDER + "/model-weights" +
-                  ".{epoch:02d}-{val_loss:.2f}.hdf5"), verbose=1)
-    model.fit(X_train, Y_train, batch_size=128, nb_epoch=1,
-              validation_data=(X_validation, Y_validation),
-              callbacks=[checkpointer])
-    # save status
-    model.save(RESULTFOLDER + "/trained_model.hdf5")
+    # check if previous model exist and load it, otherwise initialize new model
+    trained_model_file = (RESULTFOLDER + "/trained_model_fold" +
+                          str(fold) + ".hdf5")
 
-    # score validation set sentences
-    pred_ind_matrix, confidences = LSTM_predict_sentences(
-        model, data_X[len(data_X) - val_size:])
-    mcc_validation = MCC(pred_ind_matrix, Y[:, :num_labels])
+    try:
+        logger.info("Previous model found and loaded.")
+        model = load_model(trained_model_file + "sdf")
+    except OSError:
+        logger.info("No previous weights found, random initialization.")
+        # build the model: 2 stacked LSTM RNNs
+        model = Sequential()
+        model.add(LSTM(HIDDEN_DIM, return_sequences=True,
+                       input_shape=(WIN_LEN, num_chars)))
+        model.add(Dropout(0.2))
+        model.add(LSTM(HIDDEN_DIM, return_sequences=False))
+        model.add(Dropout(0.2))
+        model.add(Dense(num_chars + num_labels))
+        model.add(Activation('softmax'))
+        # save model
+        logger.info("Compiling model. Saving as " + trained_model_file)
+        model.compile(loss='categorical_crossentropy', optimizer='rmsprop')
+        # model.compile(loss=MCC_vector, optimizer='rmsprop')
+        model.save(trained_model_file)
 
-    logger.info("MCC: " + "{:0.3f}".format(mcc_validation) +
-                ", mean confidence: " + "{:0.3f}".format(np.mean(confidences)))
+    # -- TRAINING / VALIDATION
+    # train the model, output generated text after each iteration
+    for iteration in range(0, ITERATIONS):
 
-    # Output for debugging and monitoring:
-    # 1. Label a random sentence from the data
-    # 2. Produce a labelled sentence from scratch, given a seed
-    if options.verbose:
-        sentence = data_X[np.random.randint(0, len(data_X))]
-        logger.debug("[1] Labeling random sentence: ")
-        label_index, confidence = LSTM_predict_sentence(
-            model, str(sentence), debug=True)
-        logger.debug("Label: '" + str(indices2labels[label_index]) + "', "
-                     "Confidence: " + str(confidence))
+        # skip iteration if it's already computed
+        if computation_progress['iteration'] > iteration:
+            continue
 
-        logger.debug("[2] Constructing a sentence: ")
+        logger.info('## Iteration ' + str(iteration + 1) +
+                    "/" + str(ITERATIONS))
 
-        for diversity in [0.5, 1.0, 2]:
+        checkpointer = ModelCheckpoint(
+            filepath=(CHECKPOINTFOLDER + "/model-weights" +
+                      ".{epoch:02d}-{val_loss:.2f}.hdf5"), verbose=1)
+        model.fit(data_folds_train_X[fold], data_folds_train_Y[fold],
+                  batch_size=128, nb_epoch=1,
+                  validation_split=VALIDATION_SET_SIZE, shuffle=True,
+                  callbacks=[checkpointer])
+        # save status
+        model.save(RESULTFOLDER + "/trained_model" + str(fold) + ".hdf5")
 
-            logger.debug("Seed: Start of sentence above. " +
-                         "Diversity: " + str(diversity))
+        # TODO:30 fix MCC scoring
 
-            # placeholder for generated sentence and labels
-            gen_sentence = ""
-            gen_labels = ""
+        # # score validation set sentences
+        # pred_ind_matrix, confidences = LSTM_predict_sentences(
+        #     model, data_X[len(data_X) - val_size:])
+        # mcc_validation = MCC(pred_ind_matrix, Y[:, :num_labels])
+        #
+        # logger.info("MCC: " + "{:0.3f}".format(mcc_validation) +
+        #             ", mean confidence: " +
+        #             "{:0.3f}".format(np.mean(confidences)))
+
+        # Output for debugging and monitoring:
+        # 1. Label a random sentence from the data
+        # 2. Produce a labelled sentence from scratch, given a seed
+        if options.verbose:
+            sentence = input_folds_train_X[fold][
+                np.random.randint(0, len(input_folds_train_X[fold]))]
+            logger.debug("[1] Labeling random sentence: ")
+            label_index, confidence = LSTM_predict_sentence(
+                model, str(sentence), debug=True)
+            logger.debug("Label: '" + str(indices2labels[label_index]) + "', "
+                         "Confidence: " + str(confidence))
+
+            logger.debug("[2] Constructing a sentence: ")
 
             # build seed sequence
             sequences, _, _ = sentence2sequences(sentence)
             X, _ = vectorize_sequences(sequences)
-            x = np.reshape(X[0], (1, X[0].shape[0], X[0].shape[1]))
 
-            for i in range(SAMPLING_LENGTH):
+            logger.debug("Seed: " + sequences[0])
 
-                # predict distribution for next char and label
-                preds = model.predict(x, verbose=0)[0]
+            for diversity in [0.5, 1.0, 2]:
 
-                # sample next char and label from distribution
-                (next_label_index_Y_encoded,
-                 _,
-                 next_char_index_Y_encoded,
-                 _) = sample_from_output(preds, diversity)
+                logger.debug("Diversity: " + str(diversity))
 
-                # append next char and label to output
-                gen_sentence += indices2charsY[next_char_index_Y_encoded]
-                gen_labels += indices2short_labels[next_label_index_Y_encoded]
+                # reset x to original sequence
+                x = np.reshape(X[0], (1, X[0].shape[0], X[0].shape[1]))
 
-                # move input sequence forward, FILO style:
-                # kick out first character
-                x = x[:, 1:, :]
-                # attach a new space for a character
-                x = np.hstack([x, np.zeros((1, 1, num_chars))])
-                # add the newly generated character
-                next_char_index_X_encoded = (
-                    int(next_char_index_Y_encoded) - num_labels)
-                x[0, len(x), next_char_index_X_encoded] = 1
+                # placeholder for generated sentence and labels
+                gen_sentence = ""
+                gen_labels = ""
 
-            logger.debug(gen_sentence)
-            logger.debug(color.BLUE0 + gen_labels + color.END)
+                for i in range(SAMPLING_LENGTH):
+
+                    # predict distribution for next char and label
+                    preds = model.predict(x, verbose=0)[0]
+
+                    # sample next char and label from distribution
+                    (next_label_index_Y_encoded,
+                     _,
+                     next_char_index_Y_encoded,
+                     _) = sample_from_output(preds, diversity)
+
+                    # append next char and label to output
+                    gen_sentence += indices2charsY[next_char_index_Y_encoded]
+                    gen_labels += indices2short_labels[
+                        next_label_index_Y_encoded]
+
+                    # move input sequence forward, FILO style:
+                    # kick out first character
+                    x = x[:, 1:, :]
+                    # attach a new space for a character
+                    x = np.hstack([x, np.zeros((1, 1, num_chars))])
+                    # add the newly generated character
+                    next_char_index_X_encoded = (
+                        int(next_char_index_Y_encoded) - num_labels)
+                    x[0, len(x), next_char_index_X_encoded] = 1
+
+                logger.debug(gen_sentence)
+                logger.debug(color.BLUE0 + gen_labels + color.END)
+
+        # update status
+        computation_progress['iteration'] = iteration + 1
+        store_results(computation_progress)
+
+    # -- TESTING
+    # DOING:0 write test
+
+    # update status
+    computation_progress['fold'] = fold + 1
+    store_results(computation_progress)
