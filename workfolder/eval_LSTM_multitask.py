@@ -14,6 +14,8 @@ from copy import deepcopy
 import numpy as np
 import pandas as pd
 import scipy
+import sklearn
+from sklearn import metrics
 
 import keras
 from keras.models import Sequential
@@ -38,13 +40,13 @@ parser.add_option("-s", "--sync", dest="sync",  action="store_true",
 (options, args) = parser.parse_args()
 
 # Network Architecture
-ITERATIONS = 20  # 60
-HIDDEN_DIM = 100  # 512
-DATA_LIMIT_TRAIN = 100  # None, limit the number of used test data
-DATA_LIMIT_TEST = 200  # None, limit the number of used test data
+ITERATIONS = 60  # 60
+HIDDEN_DIM = 512  # 512
+DATA_LIMIT_TRAIN = None  # None, limit the number of used test data
+DATA_LIMIT_TEST = None  # None, limit the number of used test data
 FOLD_LIMIT = 1  # None, limit the number of processed folds
-VALIDATION_SET_SIZE = 0.05
-SAMPLING_LENGTH = 50
+VALIDATION_SET_SIZE = 0.1
+SAMPLING_LENGTH = 60
 
 # Window size and redundancy
 WIN_LEN = 40
@@ -194,6 +196,7 @@ def MCC(x, y, return_mean_scalar=True):
     # check if the input is in multiclass form
     try:
         y_type, _, _ = sklearn.metrics.classification._check_targets(x, y)
+        print(y_type)
         if y_type.startswith('multiclass'):
             x = lb.transform(x)
             y = lb.transform(y)
@@ -423,8 +426,44 @@ def LSTM_predict_sentence(model, sentence, debug=False,
         debug: Show debug output or not
         step_size: Step size of the window
     """
+
+    # TODO:0 Weigh predictions by their confidences
+    # TODO:10 Weigh predictions by their prior amount
+
     sequences, _, _ = sentence2sequences(sentence, step_size=step_size)
     X, _ = vectorize_sequences(sequences)
+
+    return LSTM_predict_sentence_sequence_vectors(
+        model, X, debug=debug, step_size=step_size)
+
+
+# TODO: Remove?
+# def LSTM_predict_sentences(model, sentences):
+#     """ Predict a set of sentences and return an indicator matrix
+#
+#     Args:
+#         model: LSTM model to use for prediction.
+#         sentences: Sentences to predict upon.
+#
+#     Returns:
+#         pred_ind_matrix: Indicator matrix of predictions (samples x classes)
+#         confidences: List of confidences for predictions
+#     """
+#     # predictions in the format samples x classes
+#     pred_ind_matrix = np.zeros((len(sentences), num_labels), dtype=np.bool)
+#     confidences = []
+#     for s, sentence in enumerate(sentences):
+#         label_index, confidence = LSTM_predict_sentence(model, str(sentence))
+#         pred_ind_matrix[s, label_index] = 1
+#         confidences.append(confidence)
+#     return pred_ind_matrix, confidences
+
+
+def LSTM_predict_sentence_sequence_vectors(model, X, debug=False,
+                          step_size=WIN_STEP_SIZE):
+
+    # TODO: comment this function
+
     predictions = []
     confidences = []
     for x in X:
@@ -437,6 +476,7 @@ def LSTM_predict_sentence(model, sentence, debug=False,
         predictions.append(label_index)
         confidences.append(label_confidence)
     if debug:
+        # TODO: don't print a whole black newline for long sentences
         filler = " " * int(step_size - 1)
         confidence_colored_labels = ""
         for p, prediction in enumerate(predictions):
@@ -457,27 +497,6 @@ def LSTM_predict_sentence(model, sentence, debug=False,
         label_index = mode.mode[0]  # majority label index
         confidence = mode.count[0] / len(predictions)  # proportion for label
     return label_index, confidence
-
-
-def LSTM_predict_sentences(model, sentences):
-    """ Predict a set of sentences and return an indicator matrix
-
-    Args:
-        model: LSTM model to use for prediction.
-        sentences: Sentences to predict upon.
-
-    Returns:
-        pred_ind_matrix: Indicator matrix of predictions (samples x classes)
-        confidences: List of confidences for predictions
-    """
-    # predictions in the format samples x classes
-    pred_ind_matrix = np.zeros((len(sentences), num_labels), dtype=np.bool)
-    confidences = []
-    for s, sentence in enumerate(sentences):
-        label_index, confidence = LSTM_predict_sentence(model, str(sentence))
-        pred_ind_matrix[s, label_index] = 1
-        confidences.append(confidence)
-    return pred_ind_matrix, confidences
 
 
 # ------------------------------------------------------------------------------
@@ -602,7 +621,11 @@ if options.verbose:
     logger.debug(input_folds_train_X[0][0])
 
 
-def folds2sequences(input_folds_X, input_folds_Y, debug=False):
+def folds2sequences(input_folds_X, input_folds_Y,
+                    debug=False, test_data=False):
+
+# TODO: Comment function
+# test_data: group sequencens by sentence
 
     is_first_sentence = debug
     num_seq = 0
@@ -610,7 +633,7 @@ def folds2sequences(input_folds_X, input_folds_Y, debug=False):
     folds_next_chars = []
     folds_next_labels = []
 
-    for fold_X, fold_Y in zip(input_folds_train_X, input_folds_train_Y):
+    for fold_X, fold_Y in zip(input_folds_X, input_folds_Y):
 
         fold_sequences = []
         fold_next_chars = []
@@ -623,9 +646,16 @@ def folds2sequences(input_folds_X, input_folds_Y, debug=False):
         for sentence, label in zip(fold_X, fold_Y):
             sequences, next_chars, next_labels = sentence2sequences(
                 sentence, label, debug=is_first_sentence)
-            fold_sequences.extend(sequences)
-            fold_next_chars.extend(next_chars)
-            fold_next_labels.extend(next_labels)
+
+            if test_data:
+                fold_sequences.append(sequences)
+                fold_next_chars.append(next_chars)
+                fold_next_labels.append(next_labels)
+            else:
+                fold_sequences.extend(sequences)
+                fold_next_chars.extend(next_chars)
+                fold_next_labels.extend(next_labels)
+
             num_seq += len(sequences)
             is_first_sentence = False
 
@@ -639,16 +669,17 @@ num_sequences = 0
 
 # training folds sequences
 (folds_sequences_train, folds_next_chars_train,
- folds_next_labels_train, num_seq) = folds2sequences(input_folds_train_X,
+ folds_next_labels_train, num_seq_train) = folds2sequences(input_folds_train_X,
                                                      input_folds_train_Y,
                                                      debug=options.verbose)
-num_sequences += num_seq
+num_sequences += num_seq_train
 
 # test folds sequences
 (folds_sequences_test, folds_next_chars_test,
- folds_next_labels_test, num_seq) = folds2sequences(input_folds_test_X,
-                                                    input_folds_test_Y)
-num_sequences += num_seq
+ folds_next_labels_test, num_seq_test) = folds2sequences(input_folds_test_X,
+                                                    input_folds_test_Y,
+                                                    test_data=True)
+num_sequences += num_seq_test
 
 logger.info("Generated " + str(num_sequences) + " text sequences in total.")
 
@@ -659,7 +690,6 @@ logger.info("Vectorizing sequences...")
 data_folds_train_X = []
 data_folds_test_X = []
 data_folds_train_Y = []
-data_folds_test_Y = []
 
 # training data
 for fold in range(0, num_folds):
@@ -670,28 +700,38 @@ for fold in range(0, num_folds):
     data_folds_train_Y.append(Y)
 
 # test data
+num_test_sequences_folds = []
 for fold in range(0, num_folds):
-    X, Y = vectorize_sequences(folds_sequences_test[fold],
-                               folds_next_chars_test[fold],
-                               folds_next_labels_test[fold])
-    data_folds_test_X.append(X)
-    data_folds_test_Y.append(Y)
+    num_test_sequences = 0
+    Xs = []
+    for sentence_i in range(0, len(folds_sequences_test[fold])):
+        X, _ = vectorize_sequences(folds_sequences_test[fold][sentence_i],
+                                   folds_next_chars_test[fold][sentence_i],
+                                   folds_next_labels_test[fold][sentence_i])
+        Xs.append(X)
+        num_test_sequences += len(X)
+    data_folds_test_X.append(Xs)
+    num_test_sequences_folds.append(num_test_sequences)
 
 
 logger.info("Vectorized sequences.")
 logger.debug("X dimensions: #sequences x window length x #chars")
 logger.debug("Fold 1, train: " + str(len(data_folds_train_X[0])) +
              " x " + str(WIN_LEN) + " x " + str(num_chars))
-logger.debug("Fold 1, test:  " + str(len(data_folds_test_X[0])) +
+logger.debug("Fold 1, test:  " + str(num_test_sequences_folds[0]) +
              " x " + str(WIN_LEN) + " x " + str(num_chars))
-logger.debug("Y dimensions: #sequences x #chars + #labels")
+logger.debug("Y dimensions train: #sequences x #chars + #labels")
 logger.debug("Fold 1, train: " + str(len(data_folds_train_Y[0])) +
              " x " + str(num_chars + num_labels))
-logger.debug("Fold 1, test:  " + str(len(data_folds_test_Y[0])) +
-             " x " + str(num_chars + num_labels))
+logger.debug("Y dimensions test: #sentences x #labels")
+logger.debug("Fold 1, test:  " + str(len(input_folds_test_Y[0])) +
+             " x " + str(num_labels))
 
 
 # --- TRAINING, VALIDATION AND TESTING
+
+# store test scores for each fold
+mcc_test_scores = []
 
 # train and test a model on each fold
 for fold in range(0, num_folds):
@@ -751,18 +791,7 @@ for fold in range(0, num_folds):
         # save status
         model.save(RESULTFOLDER + "/trained_model" + str(fold) + ".hdf5")
 
-        # TODO:30 fix MCC scoring
-
-        # # score validation set sentences
-        # pred_ind_matrix, confidences = LSTM_predict_sentences(
-        #     model, data_X[len(data_X) - val_size:])
-        # mcc_validation = MCC(pred_ind_matrix, Y[:, :num_labels])
-        #
-        # logger.info("MCC: " + "{:0.3f}".format(mcc_validation) +
-        #             ", mean confidence: " +
-        #             "{:0.3f}".format(np.mean(confidences)))
-
-        # Output for debugging and monitoring:
+        # -- Output for debugging and monitoring:
         # 1. Label a random sentence from the data
         # 2. Produce a labelled sentence from scratch, given a seed
         if options.verbose:
@@ -826,8 +855,25 @@ for fold in range(0, num_folds):
         computation_progress['iteration'] = iteration + 1
         store_results(computation_progress)
 
-    # -- TESTING
-    # DOING:0 write test
+        # -- TESTING SCORE
+
+        # loop over X (each entry are the vectorized sequences for one sentence
+        # and Y (the labels for each sentece)
+        Y_pred = []
+        for X, Y in zip(data_folds_test_X[fold], input_folds_test_Y[fold]):
+
+            # make predictions with the sequences
+            label_index, confidence = LSTM_predict_sentence_sequence_vectors(
+                model, X)
+
+            Y_pred.append(indices2labels[label_index])
+
+        Y_pred_binarized = lb.transform(Y_pred)
+
+        mcc = MCC(Y_pred_binarized, input_folds_test_Y[fold])
+        mcc_test_scores.append(mcc)
+
+        logger.info("MCC: " + "{:0.3f}".format(mcc))
 
     # update status
     computation_progress['fold'] = fold + 1
