@@ -44,13 +44,26 @@ ITERATIONS = 60  # 60
 HIDDEN_DIM = 512  # 512
 DATA_LIMIT_TRAIN = None  # None, limit the number of used test data
 DATA_LIMIT_TEST = None  # None, limit the number of used test data
-FOLD_LIMIT = 1  # None, limit the number of processed folds
-VALIDATION_SET_SIZE = 0.1
+FOLD_LIMIT = None  # None, limit the number of processed folds
+VALIDATION_SET_SIZE = 0.05
 SAMPLING_LENGTH = 60
 
 # Window size and redundancy
 WIN_LEN = 40
-WIN_STEP_SIZE = 3
+WIN_STEP_SIZE = 2
+
+# For testing purposes
+# ITERATIONS = 1  # 60
+# HIDDEN_DIM = 10  # 512
+# DATA_LIMIT_TRAIN = 200  # None, limit the number of used test data
+# DATA_LIMIT_TEST = 100  # None, limit the number of used test data
+# FOLD_LIMIT = 1  # None, limit the number of processed folds
+# VALIDATION_SET_SIZE = 0.1
+# SAMPLING_LENGTH = 60
+# WIN_LEN = 40
+# WIN_STEP_SIZE = 3
+
+
 
 PADDING_TOKEN = "_"
 
@@ -668,17 +681,21 @@ def folds2sequences(input_folds_X, input_folds_Y,
 num_sequences = 0
 
 # training folds sequences
-(folds_sequences_train, folds_next_chars_train,
- folds_next_labels_train, num_seq_train) = folds2sequences(input_folds_train_X,
-                                                     input_folds_train_Y,
-                                                     debug=options.verbose)
+(folds_sequences_train,
+ folds_next_chars_train,
+ folds_next_labels_train,
+ num_seq_train) = folds2sequences(input_folds_train_X,
+                                  input_folds_train_Y,
+                                  debug=options.verbose)
 num_sequences += num_seq_train
 
 # test folds sequences
-(folds_sequences_test, folds_next_chars_test,
- folds_next_labels_test, num_seq_test) = folds2sequences(input_folds_test_X,
-                                                    input_folds_test_Y,
-                                                    test_data=True)
+(folds_sequences_test,
+ folds_next_chars_test,
+ folds_next_labels_test,
+ num_seq_test) = folds2sequences(input_folds_test_X,
+                                 input_folds_test_Y,
+                                 test_data=True)
 num_sequences += num_seq_test
 
 logger.info("Generated " + str(num_sequences) + " text sequences in total.")
@@ -856,6 +873,11 @@ for fold in range(0, num_folds):
         store_results(computation_progress)
 
         # -- TESTING SCORE
+
+        # TODO: Predict all sequences as one batch and keep index
+        # about which sequences (i.e. how many) belong to each sentence. That
+        # way the algorithm is called once (in parallel on a big batch) and
+        # the score can be calcualted using the results
 
         # loop over X (each entry are the vectorized sequences for one sentence
         # and Y (the labels for each sentece)
