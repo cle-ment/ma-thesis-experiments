@@ -8,8 +8,11 @@ import os
 import logging
 import pickle
 from shutil import copyfile
+from shutil import rmtree
 from optparse import OptionParser
 from copy import deepcopy
+
+from subprocess import call
 
 import numpy as np
 import pandas as pd
@@ -36,6 +39,8 @@ parser.add_option("-v", "--verbose", dest="verbose",  action="store_true",
                   default=False, help="Show debug output.")
 parser.add_option("-s", "--sync", dest="sync",  action="store_true",
                   default=False, help="Sync results to server.")
+parser.add_option("-t", "--testrun", dest="testrun",  action="store_true",
+                  default=False, help="Only do a test run with some data.")
 
 (options, args) = parser.parse_args()
 
@@ -52,17 +57,18 @@ SAMPLING_LENGTH = 60
 WIN_LEN = 40
 WIN_STEP_SIZE = 2
 
-# For testing purposes
-# ITERATIONS = 1  # 60
-# HIDDEN_DIM = 10  # 512
-# DATA_LIMIT_TRAIN = 200  # None, limit the number of used test data
-# DATA_LIMIT_TEST = 100  # None, limit the number of used test data
-# FOLD_LIMIT = 1  # None, limit the number of processed folds
-# VALIDATION_SET_SIZE = 0.1
-# SAMPLING_LENGTH = 60
-# WIN_LEN = 40
-# WIN_STEP_SIZE = 3
-
+# If test run overwrite parameters
+if options.testrun:
+    # testing parameters
+    ITERATIONS = 1  # 60
+    HIDDEN_DIM = 5  # 512
+    DATA_LIMIT_TRAIN = 100  # None, limit the number of used test data
+    DATA_LIMIT_TEST = 50  # None, limit the number of used test data
+    FOLD_LIMIT = 1  # None, limit the number of processed folds
+    VALIDATION_SET_SIZE = 0.1
+    SAMPLING_LENGTH = 30
+    WIN_LEN = 40
+    WIN_STEP_SIZE = 3
 
 
 PADDING_TOKEN = "_"
@@ -103,32 +109,34 @@ class color:
 
 # --- SETUP
 
-# -- Check / Create the folder structure
+# -- Basefolder setup
 
 EXP_NAME = __file__.rstrip(".py")
 
 OUTFOLDER = "../output"
-if not os.path.exists(OUTFOLDER):
-    os.makedirs(OUTFOLDER)
-
 BASE_OUTFOLDER = OUTFOLDER + "/" + EXP_NAME
-if not os.path.exists(BASE_OUTFOLDER):
-    os.makedirs(BASE_OUTFOLDER)
-
 LOGFOLDER = BASE_OUTFOLDER + "/" + "logs"
-if not os.path.exists(LOGFOLDER):
-    os.makedirs(LOGFOLDER)
-
 RESULTFOLDER = BASE_OUTFOLDER + "/" + "results"
-if not os.path.exists(RESULTFOLDER):
-    os.makedirs(RESULTFOLDER)
-
 CHECKPOINTFOLDER = RESULTFOLDER + "/" + "model-checkpoints"
-if not os.path.exists(CHECKPOINTFOLDER):
-    os.makedirs(CHECKPOINTFOLDER)
-
 INPUTFOLDER = "../output/generate_best_feature_spaces/results/"
 
+# If testrun remove previous results
+if options.testrun and os.path.exists(BASE_OUTFOLDER):
+    # remove previous results if they exist
+    rmtree(BASE_OUTFOLDER)
+
+# -- Setup folder structure
+
+if not os.path.exists(OUTFOLDER):
+    os.makedirs(OUTFOLDER)
+if not os.path.exists(BASE_OUTFOLDER):
+    os.makedirs(BASE_OUTFOLDER)
+if not os.path.exists(LOGFOLDER):
+    os.makedirs(LOGFOLDER)
+if not os.path.exists(RESULTFOLDER):
+    os.makedirs(RESULTFOLDER)
+if not os.path.exists(CHECKPOINTFOLDER):
+    os.makedirs(CHECKPOINTFOLDER)
 
 # -- Logging
 
@@ -446,6 +454,10 @@ def LSTM_predict_sentence(model, sentence, debug=False,
     sequences, _, _ = sentence2sequences(sentence, step_size=step_size)
     X, _ = vectorize_sequences(sequences)
 
+    # print(X)
+
+    # x = np.reshape(X, (1, X.shape[0], X.shape[1]))
+
     return LSTM_predict_sentence_sequence_vectors(
         model, X, debug=debug, step_size=step_size)
 
@@ -479,10 +491,12 @@ def LSTM_predict_sentence_sequence_vectors(model, X, debug=False,
 
     predictions = []
     confidences = []
+
     for x in X:
         x = np.reshape(x, (1, x.shape[0], x.shape[1]))
         # predict probabilities of labels and characters with the LSTM
         out_prob_vector = model.predict(x, verbose=0)[0]
+
         # get max values from probabilities for label and char
         (label_index,
          label_confidence, _, _) = sample_from_output(out_prob_vector)
