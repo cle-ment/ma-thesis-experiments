@@ -27,6 +27,7 @@ from keras.layers.core import Dense, Activation, Dropout
 from keras.layers.recurrent import LSTM
 from keras.utils.data_utils import get_file
 from keras.callbacks import ModelCheckpoint
+from keras import backend as K
 
 # ------------------------------------------------------------------------------
 # SETTINGS AND SETUP
@@ -49,19 +50,19 @@ ITERATIONS = 60  # 60
 HIDDEN_DIM = 512  # 512
 DATA_LIMIT_TRAIN = None  # None, limit the number of used test data
 DATA_LIMIT_TEST = None  # None, limit the number of used test data
-FOLD_LIMIT = None  # None, limit the number of processed folds
+FOLD_LIMIT = 1  # None, limit the number of processed folds
 VALIDATION_SET_SIZE = 0.05
 SAMPLING_LENGTH = 60
 
 # Window size and redundancy
 WIN_LEN = 40
-WIN_STEP_SIZE = 2
+WIN_STEP_SIZE = 1
 
 # If test run overwrite parameters
 if options.testrun:
     # testing parameters
-    ITERATIONS = 1  # 60
-    HIDDEN_DIM = 5  # 512
+    ITERATIONS = 5  # 60
+    HIDDEN_DIM = 10  # 512
     DATA_LIMIT_TRAIN = 100  # None, limit the number of used test data
     DATA_LIMIT_TEST = 50  # None, limit the number of used test data
     FOLD_LIMIT = 1  # None, limit the number of processed folds
@@ -142,10 +143,7 @@ if not os.path.exists(CHECKPOINTFOLDER):
 
 # create logger
 logger = logging.getLogger(EXP_NAME)
-if options.verbose:
-    logger.setLevel(logging.DEBUG)
-else:
-    logger.setLevel(logging.INFO)
+
 
 # create console handler and set level to debug
 ch = logging.StreamHandler()
@@ -153,6 +151,15 @@ ch.setLevel(logging.DEBUG)
 # create file handler which logs even debug messages
 fh = logging.FileHandler(LOGFOLDER + '/logger.log')
 fh.setLevel(logging.INFO)
+
+if options.verbose:
+    logger.setLevel(logging.DEBUG)
+    ch.setLevel(logging.DEBUG)
+    fh.setLevel(logging.DEBUG)
+else:
+    logger.setLevel(logging.INFO)
+    ch.setLevel(logging.INFO)
+    fh.setLevel(logging.INFO)
 
 # create formatter
 formatter = logging.Formatter('%(asctime)s %(levelname)s | %(message)s')
@@ -176,6 +183,27 @@ logger.propagate = False
 # --- UTILITY FUNCTIONS
 
 # -- Evaluation
+
+def matthews_correlation(y_true, y_pred):
+    ''' Matthews correlation coefficient
+    '''
+    y_pred_pos = K.round(K.clip(y_pred, 0, 1))
+    y_pred_neg = 1 - y_pred_pos
+
+    y_pos = K.round(K.clip(y_true, 0, 1))
+    y_neg = 1 - y_pos
+
+    tp = K.sum(y_pos * y_pred_pos)
+    tn = K.sum(y_neg * y_pred_neg)
+
+    fp = K.sum(1 - y_neg * y_pred_pos)
+    fn = K.sum(1 - y_pos * y_pred_neg)
+
+    numerator = (tp * tn - fp * fn)
+    denominator = K.sqrt((tp + fp) * (tp + fn) * (tn + fp) * (tn + fn))
+
+    return numerator / (denominator + K.epsilon())
+
 
 def cov(x, y, return_mean_scalar=True):
     """ Covariance Function for Matthews Correlation coefficient below.
@@ -783,7 +811,7 @@ for fold in range(0, num_folds):
 
     try:
         logger.info("Previous model found and loaded.")
-        model = load_model(trained_model_file + "sdf")
+        model = load_model(trained_model_file)
     except OSError:
         logger.info("No previous weights found, random initialization.")
         # build the model: 2 stacked LSTM RNNs
@@ -797,7 +825,8 @@ for fold in range(0, num_folds):
         model.add(Activation('softmax'))
         # save model
         logger.info("Compiling model. Saving as " + trained_model_file)
-        model.compile(loss='categorical_crossentropy', optimizer='rmsprop')
+        model.compile(loss='categorical_crossentropy', optimizer='rmsprop',
+                      metrics=[matthews_correlation])
         # model.compile(loss=MCC_vector, optimizer='rmsprop')
         model.save(trained_model_file)
 
@@ -886,30 +915,30 @@ for fold in range(0, num_folds):
         computation_progress['iteration'] = iteration + 1
         store_results(computation_progress)
 
-        # -- TESTING SCORE
+    # -- TESTING SCORE
 
-        # TODO: Predict all sequences as one batch and keep index
-        # about which sequences (i.e. how many) belong to each sentence. That
-        # way the algorithm is called once (in parallel on a big batch) and
-        # the score can be calcualted using the results
+    # TODO: Predict all sequences as one batch and keep index
+    # about which sequences (i.e. how many) belong to each sentence. That
+    # way the algorithm is called once (in parallel on a big batch) and
+    # the score can be calcualted using the results
 
-        # loop over X (each entry are the vectorized sequences for one sentence
-        # and Y (the labels for each sentece)
-        Y_pred = []
-        for X, Y in zip(data_folds_test_X[fold], input_folds_test_Y[fold]):
+    # loop over X (each entry are the vectorized sequences for one sentence
+    # and Y (the labels for each sentece)
+    Y_pred = []
+    for X, Y in zip(data_folds_test_X[fold], input_folds_test_Y[fold]):
 
-            # make predictions with the sequences
-            label_index, confidence = LSTM_predict_sentence_sequence_vectors(
-                model, X)
+        # make predictions with the sequences
+        label_index, confidence = LSTM_predict_sentence_sequence_vectors(
+            model, X)
 
-            Y_pred.append(indices2labels[label_index])
+        Y_pred.append(indices2labels[label_index])
 
-        Y_pred_binarized = lb.transform(Y_pred)
+    Y_pred_binarized = lb.transform(Y_pred)
 
-        mcc = MCC(Y_pred_binarized, input_folds_test_Y[fold])
-        mcc_test_scores.append(mcc)
+    mcc = MCC(Y_pred_binarized, input_folds_test_Y[fold])
+    mcc_test_scores.append(mcc)
 
-        logger.info("MCC: " + "{:0.3f}".format(mcc))
+    logger.info("MCC: " + "{:0.3f}".format(mcc))
 
     # update status
     computation_progress['fold'] = fold + 1
