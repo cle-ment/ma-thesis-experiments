@@ -476,8 +476,8 @@ def LSTM_predict_sentence(model, sentence, debug=False,
         step_size: Step size of the window
     """
 
-    # TODO:0 Weigh predictions by their confidences
-    # TODO:10 Weigh predictions by their prior amount
+    # TODO:0 Weigh predictions by their confidences!
+    # TODO:10 Weigh predictions by their prior amount!
 
     sequences, _, _ = sentence2sequences(sentence, step_size=step_size)
     X, _ = vectorize_sequences(sequences)
@@ -843,7 +843,7 @@ for fold in range(0, num_folds):
 
         checkpointer = ModelCheckpoint(
             filepath=(CHECKPOINTFOLDER + "/model-weights" +
-                      ".{epoch:02d}-{val_loss:.2f}.hdf5"), verbose=1)
+                      "." + iteration + "-{val_loss:.2f}.hdf5"), verbose=1)
         model.fit(data_folds_train_X[fold], data_folds_train_Y[fold],
                   batch_size=128, nb_epoch=1,
                   validation_split=VALIDATION_SET_SIZE, shuffle=True,

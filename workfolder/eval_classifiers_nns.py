@@ -371,7 +371,7 @@ if (computation_progress['classifier'] == 0):
          ('nn', classifier)])
 
     parameter_space = {
-    # TODO:0 find out how to use paramters
+    # TODO:20 find out how to use paramters
         # 'nn__model__lr': [0.01, 0.05, 0.1]
     }
 
@@ -422,7 +422,7 @@ if (computation_progress['classifier'] == 1):
          ('nn', classifier)])
 
     parameter_space = {
-    # TODO:10 find out how to use paramters
+    # TODO:30 find out how to use paramters
         # 'nn__model__lr': [0.01, 0.05, 0.1]
     }
 
@@ -490,7 +490,7 @@ if (computation_progress['classifier'] == 2):
          ('nn', classifier)])
 
     parameter_space = {
-    # TODO:20 find out how to use paramters
+    # TODO:40 find out how to use paramters
         # 'nn__model__lr': [0.01, 0.05, 0.1]
     }
 
